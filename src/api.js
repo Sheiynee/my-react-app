@@ -1,0 +1,33 @@
+const BASE = import.meta.env.VITE_API_URL || ''
+
+async function req(method, path, body) {
+  const res = await fetch(`${BASE}/api${path}`, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export const getProjects = () => req('GET', '/projects')
+export const createProject = (data) => req('POST', '/projects', data)
+export const updateProject = (id, data) => req('PUT', `/projects/${id}`, data)
+export const deleteProject = (id) => req('DELETE', `/projects/${id}`)
+
+export const getTasks = (projectId) =>
+  req('GET', `/tasks${projectId ? `?projectId=${projectId}` : ''}`)
+export const createTask = (data) => req('POST', '/tasks', data)
+export const updateTask = (id, data) => req('PUT', `/tasks/${id}`, data)
+export const deleteTask = (id) => req('DELETE', `/tasks/${id}`)
+
+export const getMembers = () => req('GET', '/members')
+export const createMember = (data) => req('POST', '/members', data)
+export const updateMember = (id, data) => req('PUT', `/members/${id}`, data)
+export const deleteMember = (id) => req('DELETE', `/members/${id}`)
+
+export const getNotes = (projectId) =>
+  req('GET', `/notes${projectId ? `?projectId=${projectId}` : ''}`)
+export const createNote = (data) => req('POST', '/notes', data)
+export const updateNote = (id, data) => req('PUT', `/notes/${id}`, data)
+export const deleteNote = (id) => req('DELETE', `/notes/${id}`)
