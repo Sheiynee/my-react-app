@@ -13,6 +13,8 @@ dist-ssr
 *.local
 server/.env
 server/serviceAccountKey.json
+server/server.zip
+*.zip
 .env
 
 # Editor directories and files
