@@ -31,3 +31,7 @@ export const getNotes = (projectId) =>
 export const createNote = (data) => req('POST', '/notes', data)
 export const updateNote = (id, data) => req('PUT', `/notes/${id}`, data)
 export const deleteNote = (id) => req('DELETE', `/notes/${id}`)
+
+export const getComments = (taskId) => req('GET', `/comments?taskId=${taskId}`)
+export const createComment = (data) => req('POST', '/comments', data)
+export const deleteComment = (id) => req('DELETE', `/comments/${id}`)

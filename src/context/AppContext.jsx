@@ -69,7 +69,11 @@ export function AppProvider({ children }) {
   async function removeMember(id) {
     await api.deleteMember(id)
     setMembers(prev => prev.filter(x => x.id !== id))
-    setTasks(prev => prev.map(t => t.assigneeId === id ? { ...t, assigneeId: null } : t))
+    setTasks(prev => prev.map(t => ({
+      ...t,
+      assigneeIds: (t.assigneeIds || []).filter(aId => aId !== id),
+      assigneeId: t.assigneeId === id ? null : t.assigneeId,
+    })))
   }
 
   // Notes

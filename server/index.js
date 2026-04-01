@@ -92,9 +92,13 @@ app.put('/api/tasks/:id', async (req, res) => {
 
 app.delete('/api/tasks/:id', async (req, res) => {
   await db.collection('tasks').doc(req.params.id).delete()
-  const subSnap = await db.collection('tasks').where('parentId', '==', req.params.id).get()
+  const [subSnap, commentSnap] = await Promise.all([
+    db.collection('tasks').where('parentId', '==', req.params.id).get(),
+    db.collection('comments').where('taskId', '==', req.params.id).get(),
+  ])
   const batch = db.batch()
   subSnap.docs.forEach(d => batch.delete(d.ref))
+  commentSnap.docs.forEach(d => batch.delete(d.ref))
   await batch.commit()
   res.json({ ok: true })
 })
@@ -171,6 +175,34 @@ app.put('/api/notes/:id', async (req, res) => {
 
 app.delete('/api/notes/:id', async (req, res) => {
   await db.collection('notes').doc(req.params.id).delete()
+  res.json({ ok: true })
+})
+
+// ── Comments ───────────────────────────────────────────────
+
+app.get('/api/comments', async (req, res) => {
+  let query = db.collection('comments')
+  if (req.query.taskId) query = query.where('taskId', '==', req.query.taskId)
+  const snap = await query.get()
+  const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  res.json(comments)
+})
+
+app.post('/api/comments', async (req, res) => {
+  const id = uuid()
+  const comment = {
+    taskId: req.body.taskId,
+    content: req.body.content,
+    authorName: req.body.authorName || 'Anonymous',
+    createdAt: new Date().toISOString(),
+  }
+  await db.collection('comments').doc(id).set(comment)
+  res.json({ id, ...comment })
+})
+
+app.delete('/api/comments/:id', async (req, res) => {
+  await db.collection('comments').doc(req.params.id).delete()
   res.json({ ok: true })
 })
 
