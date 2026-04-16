@@ -2,11 +2,18 @@ import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
 import { v4 as uuid } from 'uuid'
+import admin from 'firebase-admin'
 import { db } from './db.js'
+
+const { FieldValue } = admin.firestore
 
 const app = express()
 app.use(cors({ origin: ['https://joanna-bot.web.app', 'http://localhost:5173'] }))
 app.use(express.json())
+
+const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
+
+function bad(res, msg) { return res.status(400).json({ error: msg }) }
 
 // ── Projects ──────────────────────────────────────────────
 
@@ -16,13 +23,15 @@ app.get('/api/projects', async (req, res) => {
 })
 
 app.post('/api/projects', async (req, res) => {
+  const { name } = req.body
+  if (!name || typeof name !== 'string' || !name.trim()) return bad(res, 'name is required')
   const id = uuid()
   const project = {
-    name: '',
     description: '',
     color: '#388bfd',
     memberIds: [],
     ...req.body,
+    name: name.trim(),
     createdAt: new Date().toISOString(),
   }
   await db.collection('projects').doc(id).set(project)
@@ -58,6 +67,10 @@ app.get('/api/tasks', async (req, res) => {
 })
 
 app.post('/api/tasks', async (req, res) => {
+  const { title, projectId, priority } = req.body
+  if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
+  if (!projectId || typeof projectId !== 'string') return bad(res, 'projectId is required')
+  if (priority && !VALID_PRIORITIES.has(priority)) return bad(res, `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`)
   const id = uuid()
   const task = {
     projectId: null,
@@ -70,6 +83,7 @@ app.post('/api/tasks', async (req, res) => {
     dueDate: null,
     completedAt: null,
     ...req.body,
+    title: title.trim(),
     createdAt: new Date().toISOString(),
   }
   await db.collection('tasks').doc(id).set(task)
@@ -77,6 +91,8 @@ app.post('/api/tasks', async (req, res) => {
 })
 
 app.put('/api/tasks/:id', async (req, res) => {
+  const { priority } = req.body
+  if (priority && !VALID_PRIORITIES.has(priority)) return bad(res, `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`)
   const ref = db.collection('tasks').doc(req.params.id)
   const doc = await ref.get()
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
@@ -111,13 +127,15 @@ app.get('/api/members', async (req, res) => {
 })
 
 app.post('/api/members', async (req, res) => {
+  const { name } = req.body
+  if (!name || typeof name !== 'string' || !name.trim()) return bad(res, 'name is required')
   const id = uuid()
   const member = {
-    name: '',
     color: '#388bfd',
     role: '',
     discordId: '',
     ...req.body,
+    name: name.trim(),
     createdAt: new Date().toISOString(),
   }
   await db.collection('members').doc(id).set(member)
@@ -133,10 +151,15 @@ app.put('/api/members/:id', async (req, res) => {
 })
 
 app.delete('/api/members/:id', async (req, res) => {
-  await db.collection('members').doc(req.params.id).delete()
-  const taskSnap = await db.collection('tasks').where('assigneeId', '==', req.params.id).get()
+  const memberId = req.params.id
+  await db.collection('members').doc(memberId).delete()
+  const [legacySnap, arraySnap] = await Promise.all([
+    db.collection('tasks').where('assigneeId', '==', memberId).get(),
+    db.collection('tasks').where('assigneeIds', 'array-contains', memberId).get(),
+  ])
   const batch = db.batch()
-  taskSnap.docs.forEach(d => batch.update(d.ref, { assigneeId: null }))
+  legacySnap.docs.forEach(d => batch.update(d.ref, { assigneeId: null }))
+  arraySnap.docs.forEach(d => batch.update(d.ref, { assigneeIds: FieldValue.arrayRemove(memberId) }))
   await batch.commit()
   res.json({ ok: true })
 })
@@ -151,12 +174,14 @@ app.get('/api/notes', async (req, res) => {
 })
 
 app.post('/api/notes', async (req, res) => {
+  const { title } = req.body
+  if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
   const id = uuid()
   const note = {
     projectId: null,
-    title: '',
     content: '',
     ...req.body,
+    title: title.trim(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -190,11 +215,14 @@ app.get('/api/comments', async (req, res) => {
 })
 
 app.post('/api/comments', async (req, res) => {
+  const { taskId, content } = req.body
+  if (!taskId || typeof taskId !== 'string') return bad(res, 'taskId is required')
+  if (!content || typeof content !== 'string' || !content.trim()) return bad(res, 'content is required')
   const id = uuid()
   const comment = {
-    taskId: req.body.taskId,
-    content: req.body.content,
-    authorName: req.body.authorName || 'Anonymous',
+    taskId,
+    content: content.trim(),
+    authorName: req.body.authorName?.trim() || 'Anonymous',
     createdAt: new Date().toISOString(),
   }
   await db.collection('comments').doc(id).set(comment)
