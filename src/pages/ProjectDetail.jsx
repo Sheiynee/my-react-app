@@ -10,9 +10,9 @@ import {
 } from '@dnd-kit/core'
 
 const DEFAULT_COLUMNS = [
-  { key: 'todo', label: 'Todo', color: '#8b949e' },
-  { key: 'in_progress', label: 'In Progress', color: '#388bfd' },
-  { key: 'done', label: 'Done', color: '#3fb950' },
+  { key: 'todo', label: 'Todo', color: '#9ca3af' },
+  { key: 'in_progress', label: 'In Progress', color: '#2563eb' },
+  { key: 'done', label: 'Done', color: '#16a34a' },
 ]
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent']
@@ -21,6 +21,15 @@ const EMPTY_TASK = {
   title: '', description: '', status: 'todo', priority: 'medium',
   assigneeIds: [], dueDate: '', parentId: null, links: [],
 }
+
+const priorityBadge = {
+  low: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  medium: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  high: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  urgent: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400',
+}
+
+const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
 
 function getAssigneeIds(task) {
   if (task.assigneeIds?.length) return task.assigneeIds
@@ -31,7 +40,7 @@ function getAssigneeIds(task) {
 function DroppableColumn({ id, children }) {
   const { setNodeRef, isOver } = useDroppable({ id })
   return (
-    <div ref={setNodeRef} className={`kanban-cards${isOver ? ' drop-over' : ''}`}>
+    <div ref={setNodeRef} className={`flex flex-col gap-2 min-h-[80px] p-2 rounded-xl transition-colors ${isOver ? 'drop-over' : ''}`}>
       {children}
     </div>
   )
@@ -77,8 +86,11 @@ export default function ProjectDetail() {
   }, [taskModal?.id, taskModal?.mode])
 
   if (!project) return (
-    <div className="page">
-      <p className="text-muted">Project not found. <button className="btn-ghost" onClick={() => navigate('/projects')}>Go back</button></p>
+    <div className="p-8">
+      <p className="text-sm text-gray-500 dark:text-zinc-400">
+        Project not found.{' '}
+        <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => navigate('/projects')}>Go back</button>
+      </p>
     </div>
   )
 
@@ -189,7 +201,7 @@ export default function ProjectDetail() {
   function addColumn() {
     setProjectForm(f => ({
       ...f,
-      columns: [...f.columns, { key: `col_${Date.now()}`, label: 'New Column', color: '#8b949e' }],
+      columns: [...f.columns, { key: `col_${Date.now()}`, label: 'New Column', color: '#9ca3af' }],
     }))
   }
 
@@ -240,40 +252,62 @@ export default function ProjectDetail() {
     const colIdx = col ? columns.findIndex(c => c.key === col.key) : -1
 
     return (
-      <div className="task-card" onClick={() => openEditTask(task)}>
-        <div className={`task-card-priority priority-bar-${task.priority}`} />
-        <div className="task-card-body">
-          <p className="task-card-title">{task.title}</p>
-          <div className="task-card-meta">
-            <span className={`priority-badge priority-${task.priority}`}>{task.priority}</span>
-            {subs.length > 0 && <span className="subtask-count">{doneSubs}/{subs.length}</span>}
-            {task.links?.length > 0 && <span className="subtask-count">🔗 {task.links.length}</span>}
+      <div
+        className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden hover:border-blue-200 dark:hover:border-zinc-700 hover:shadow-md transition-all cursor-pointer flex group"
+        onClick={() => openEditTask(task)}
+      >
+        <div className={`w-1 flex-shrink-0 priority-bar-${task.priority}`} />
+        <div className="flex-1 p-3">
+          <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 mb-2 leading-snug">{task.title}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${priorityBadge[task.priority]}`}>
+              {task.priority}
+            </span>
+            {subs.length > 0 && (
+              <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                {doneSubs}/{subs.length}
+              </span>
+            )}
+            {task.links?.length > 0 && (
+              <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                🔗 {task.links.length}
+              </span>
+            )}
             {task.dueDate && (
-              <span className={`due-date ${isOverdue ? 'overdue' : ''}`}>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full ${isOverdue ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800'}`}>
                 {new Date(task.dueDate).toLocaleDateString()}
               </span>
             )}
           </div>
-          <div className="task-card-footer">
+          <div className="flex items-center justify-between">
             {assignees.length > 0 && (
-              <div className="avatar-stack">
-                {assignees.slice(0, 3).map(a => (
-                  <span key={a.id} className="avatar-sm" style={{ background: a.color }} title={a.name}>
+              <div className="flex">
+                {assignees.slice(0, 3).map((a, i) => (
+                  <span
+                    key={a.id}
+                    className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 flex items-center justify-center text-[9px] font-bold text-white"
+                    style={{ background: a.color, marginLeft: i > 0 ? -4 : 0 }}
+                    title={a.name}
+                  >
                     {a.name[0]?.toUpperCase()}
                   </span>
                 ))}
                 {assignees.length > 3 && (
-                  <span className="avatar-sm" style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}>
+                  <span className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-[9px] text-gray-500 dark:text-zinc-400" style={{ marginLeft: -4 }}>
                     +{assignees.length - 3}
                   </span>
                 )}
               </div>
             )}
             {col && (
-              <div className="task-card-actions" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
-                {colIdx > 0 && <button className="btn-move" onClick={() => moveTask(task, columns[colIdx - 1].key)}>←</button>}
-                {colIdx < columns.length - 1 && <button className="btn-move" onClick={() => moveTask(task, columns[colIdx + 1].key)}>→</button>}
-                <button className="btn-icon danger sm" onClick={() => handleDeleteTask(task.id)}>✕</button>
+              <div className="flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+                {colIdx > 0 && (
+                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => moveTask(task, columns[colIdx - 1].key)}>←</button>
+                )}
+                {colIdx < columns.length - 1 && (
+                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => moveTask(task, columns[colIdx + 1].key)}>→</button>
+                )}
+                <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs" onClick={() => handleDeleteTask(task.id)}>✕</button>
               </div>
             )}
           </div>
@@ -283,38 +317,45 @@ export default function ProjectDetail() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div className="project-detail-title">
-          <span className="project-color-bar" style={{ background: project.color }} />
+    <div className="p-8">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ background: project.color }} />
           <div>
-            <h2>{project.name}</h2>
-            {project.description && <p className="text-muted">{project.description}</p>}
+            <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-zinc-100">{project.name}</h2>
+            {project.description && <p className="text-sm text-gray-500 dark:text-zinc-400 mt-0.5">{project.description}</p>}
           </div>
         </div>
-        <div className="row-gap">
-          <span className="text-muted">{done}/{projectTasks.length} done · {progress}%</span>
-          <button className="btn-ghost" onClick={openEditProject}>Edit</button>
-          <button className="btn-ghost danger" onClick={handleDeleteProject}>Delete</button>
-          <button className="btn-primary" onClick={() => openCreateTask()}>+ Add Task</button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs text-gray-400 dark:text-zinc-500">{done}/{projectTasks.length} done · {progress}%</span>
+          <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={openEditProject}>Edit</button>
+          <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={handleDeleteProject}>Delete</button>
+          <button className="text-sm font-medium px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openCreateTask()}>+ Add Task</button>
         </div>
       </div>
 
-      <div className="progress-bar" style={{ marginBottom: 24 }}>
-        <div className="progress-fill" style={{ width: `${progress}%`, background: project.color }} />
+      {/* Progress bar */}
+      <div className="h-1 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden mb-7">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, background: project.color }} />
       </div>
 
+      {/* Kanban board */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="kanban" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))` }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))` }}>
           {columns.map(col => {
             const colTasks = projectTasks.filter(t => t.status === col.key)
             return (
-              <div key={col.key} className="kanban-col">
-                <div className="kanban-col-header">
-                  <span className="kanban-col-dot" style={{ background: col.color }} />
-                  <span className="kanban-col-title">{col.label}</span>
-                  <span className="kanban-col-count">{colTasks.length}</span>
-                  <button className="btn-icon" onClick={() => openCreateTask(col.key)} title="Add task">+</button>
+              <div key={col.key} className="bg-gray-50 dark:bg-zinc-950/60 border border-gray-100 dark:border-zinc-800/60 rounded-2xl flex flex-col">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-zinc-800/60">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.color }} />
+                  <span className="text-xs font-semibold text-gray-700 dark:text-zinc-300">{col.label}</span>
+                  <span className="text-xs text-gray-400 dark:text-zinc-600 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-full ml-0.5">{colTasks.length}</span>
+                  <button
+                    className="ml-auto w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-600 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors text-base leading-none"
+                    onClick={() => openCreateTask(col.key)}
+                    title="Add task"
+                  >+</button>
                 </div>
                 <DroppableColumn id={col.key}>
                   {colTasks.map(task => (
@@ -329,7 +370,7 @@ export default function ProjectDetail() {
         </div>
         <DragOverlay>
           {activeTask && (
-            <div style={{ opacity: 0.9, transform: 'rotate(2deg)', pointerEvents: 'none' }}>
+            <div style={{ transform: 'rotate(2deg)', pointerEvents: 'none', opacity: 0.9 }}>
               <TaskCardContent task={activeTask} col={null} />
             </div>
           )}
@@ -338,121 +379,153 @@ export default function ProjectDetail() {
 
       {/* Task modal */}
       {taskModal && (
-        <Modal title={taskModal.mode === 'create' ? 'New Task' : 'Edit Task'} onClose={closeTaskModal} width="720px">
-          <form onSubmit={handleTaskSubmit} className="form">
-            <label>Title *
-              <input autoFocus value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" required />
+        <Modal title={taskModal.mode === 'create' ? 'New Task' : 'Edit Task'} onClose={closeTaskModal} width="700px">
+          <form onSubmit={handleTaskSubmit} className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Title</span>
+              <input autoFocus className={inputCls} value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" required />
             </label>
 
-            <div className="form-row form-row-3">
-              <label>Status
-                <select value={taskForm.status} onChange={e => setTaskForm(f => ({ ...f, status: e.target.value }))}>
+            <div className="grid grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Status</span>
+                <select className={inputCls} value={taskForm.status} onChange={e => setTaskForm(f => ({ ...f, status: e.target.value }))}>
                   {columns.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
               </label>
-              <label>Priority
-                <select value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Priority</span>
+                <select className={inputCls} value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
                   {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
                 </select>
               </label>
-              <label>Due Date
-                <input type="date" value={taskForm.dueDate} onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))} />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Due Date</span>
+                <input type="date" className={inputCls} value={taskForm.dueDate} onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))} />
               </label>
             </div>
 
             {/* Assignees */}
             <div>
-              <p className="form-section-label">Assignees</p>
-              {members.length === 0 ? (
-                <p className="text-muted" style={{ fontSize: 13 }}>No team members yet.</p>
-              ) : (
-                <div className="assignee-list">
-                  {members.map(m => {
-                    const selected = (taskForm.assigneeIds || []).includes(m.id)
-                    return (
-                      <button key={m.id} type="button" className={`assignee-chip${selected ? ' selected' : ''}`} onClick={() => toggleAssignee(m.id)}>
-                        <span className="avatar-sm" style={{ background: m.color }}>{m.name[0]?.toUpperCase()}</span>
-                        <span>{m.name}</span>
-                        {selected && <span className="chip-check">✓</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+              <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Assignees</p>
+              {members.length === 0
+                ? <p className="text-xs text-gray-400 dark:text-zinc-500">No team members yet.</p>
+                : (
+                  <div className="flex flex-wrap gap-2">
+                    {members.map(m => {
+                      const selected = (taskForm.assigneeIds || []).includes(m.id)
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                              : 'border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600'
+                          }`}
+                          onClick={() => toggleAssignee(m.id)}
+                        >
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: m.color }}>
+                            {m.name[0]?.toUpperCase()}
+                          </span>
+                          <span>{m.name}</span>
+                          {selected && <span className="text-blue-500 text-xs">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              }
             </div>
 
             {/* Description */}
             <div>
-              <p className="form-section-label">Description</p>
+              <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Description</p>
               <RichTextEditor content={taskForm.description} onChange={html => setTaskForm(f => ({ ...f, description: html }))} />
             </div>
 
             {/* Links */}
             <div>
-              <p className="form-section-label">Links</p>
+              <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Links</p>
               {(taskForm.links || []).map((link, i) => (
-                <div key={i} className="link-item">
-                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="link-url">🔗 {link.label}</a>
-                  <button type="button" className="btn-icon danger sm" onClick={() => removeLink(i)}>✕</button>
+                <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-zinc-950 rounded-xl mb-2 border border-gray-100 dark:border-zinc-800">
+                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 text-xs text-blue-600 dark:text-blue-400 truncate hover:underline">
+                    🔗 {link.label}
+                  </a>
+                  <button type="button" className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs" onClick={() => removeLink(i)}>✕</button>
                 </div>
               ))}
-              <div className="link-add">
-                <input placeholder="https://..." value={linkInput.url} onChange={e => setLinkInput(l => ({ ...l, url: e.target.value }))} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())} />
-                <input placeholder="Label (optional)" value={linkInput.label} onChange={e => setLinkInput(l => ({ ...l, label: e.target.value }))} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())} />
-                <button type="button" className="btn-ghost" onClick={addLink}>Add</button>
+              <div className="flex gap-2">
+                <input className={inputCls} placeholder="https://..." value={linkInput.url} onChange={e => setLinkInput(l => ({ ...l, url: e.target.value }))} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())} />
+                <input className={inputCls} placeholder="Label (optional)" value={linkInput.label} onChange={e => setLinkInput(l => ({ ...l, label: e.target.value }))} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())} />
+                <button type="button" className="flex-shrink-0 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={addLink}>Add</button>
               </div>
             </div>
 
             {/* Subtasks */}
             {taskModal.mode === 'edit' && (
-              <div className="subtasks-section">
-                <p className="form-section-label">Subtasks</p>
-                {subtasksOf(taskModal.id).map(s => (
-                  <div key={s.id} className="subtask-item">
-                    <input type="checkbox" checked={s.status === 'done'} onChange={() => editTask(s.id, { status: s.status === 'done' ? 'todo' : 'done' })} />
-                    <span className={s.status === 'done' ? 'line-through' : ''}>{s.title}</span>
-                    <button type="button" className="btn-icon danger sm" onClick={() => removeTask(s.id)}>✕</button>
-                  </div>
-                ))}
-                <div className="subtask-add">
-                  <input value={subtaskInput} onChange={e => setSubtaskInput(e.target.value)} placeholder="Add subtask..." onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSubtask())} />
-                  <button type="button" className="btn-ghost" onClick={addSubtask}>Add</button>
+              <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
+                <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Subtasks</p>
+                <div className="space-y-1 mb-2">
+                  {subtasksOf(taskModal.id).map(s => (
+                    <div key={s.id} className="flex items-center gap-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={s.status === 'done'}
+                        onChange={() => editTask(s.id, { status: s.status === 'done' ? 'todo' : 'done' })}
+                        className="accent-emerald-500 w-4 h-4 flex-shrink-0"
+                      />
+                      <span className={`flex-1 text-sm ${s.status === 'done' ? 'line-through text-gray-400 dark:text-zinc-600' : 'text-gray-800 dark:text-zinc-200'}`}>{s.title}</span>
+                      <button type="button" className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs" onClick={() => removeTask(s.id)}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input className={inputCls} value={subtaskInput} onChange={e => setSubtaskInput(e.target.value)} placeholder="Add subtask..." onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSubtask())} />
+                  <button type="button" className="flex-shrink-0 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={addSubtask}>Add</button>
                 </div>
               </div>
             )}
 
             {/* Comments */}
             {taskModal.mode === 'edit' && (
-              <div className="comments-section">
-                <p className="form-section-label">Comments ({comments.length})</p>
-                <div className="comment-list">
+              <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
+                <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Comments ({comments.length})</p>
+                <div className="space-y-2 mb-3">
                   {comments.map(c => (
-                    <div key={c.id} className="comment-item">
-                      <div className="comment-header">
-                        <span className="comment-author">{c.authorName}</span>
-                        <span className="comment-time">{new Date(c.createdAt).toLocaleString()}</span>
-                        <button type="button" className="btn-icon danger sm" onClick={() => handleDeleteComment(c.id)}>✕</button>
+                    <div key={c.id} className="bg-gray-50 dark:bg-zinc-950 border border-gray-100 dark:border-zinc-800 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs font-semibold text-gray-800 dark:text-zinc-200">{c.authorName}</span>
+                        <span className="text-xs text-gray-400 dark:text-zinc-500 flex-1">{new Date(c.createdAt).toLocaleString()}</span>
+                        <button type="button" className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 transition-colors text-xs" onClick={() => handleDeleteComment(c.id)}>✕</button>
                       </div>
-                      <p className="comment-content">{c.content}</p>
+                      <p className="text-sm text-gray-700 dark:text-zinc-300 whitespace-pre-wrap">{c.content}</p>
                     </div>
                   ))}
                 </div>
-                <div className="comment-add">
-                  <input placeholder="Your name" value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} style={{ marginBottom: 6 }} />
-                  <div className="comment-input-row">
-                    <textarea placeholder="Write a comment... (Ctrl+Enter to post)" value={commentInput} onChange={e => setCommentInput(e.target.value)} rows={2} onKeyDown={e => e.key === 'Enter' && e.ctrlKey && handleAddComment(e)} />
-                    <button type="button" className="btn-ghost" onClick={handleAddComment}>Post</button>
-                  </div>
+                <input className={`${inputCls} mb-2`} placeholder="Your name" value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} />
+                <div className="flex gap-2 items-start">
+                  <textarea
+                    className={inputCls}
+                    placeholder="Write a comment... (Ctrl+Enter to post)"
+                    value={commentInput}
+                    onChange={e => setCommentInput(e.target.value)}
+                    rows={2}
+                    onKeyDown={e => e.key === 'Enter' && e.ctrlKey && handleAddComment(e)}
+                  />
+                  <button type="button" className="flex-shrink-0 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={handleAddComment}>Post</button>
                 </div>
               </div>
             )}
 
-            <div className="form-actions">
-              <button type="button" className="btn-ghost" onClick={closeTaskModal}>Cancel</button>
+            <div className="flex justify-end gap-2 pt-1 border-t border-gray-100 dark:border-zinc-800">
+              <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={closeTaskModal}>Cancel</button>
               {taskModal.mode === 'edit' && (
-                <button type="button" className="btn-ghost danger" onClick={() => handleDeleteTask(taskModal.id)}>Delete</button>
+                <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:border-red-200 transition-colors" onClick={() => handleDeleteTask(taskModal.id)}>Delete</button>
               )}
-              <button type="submit" className="btn-primary">{taskModal.mode === 'create' ? 'Create Task' : 'Save Changes'}</button>
+              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                {taskModal.mode === 'create' ? 'Create Task' : 'Save Changes'}
+              </button>
             </div>
           </form>
         </Modal>
@@ -460,34 +533,36 @@ export default function ProjectDetail() {
 
       {/* Edit project modal */}
       {editProjectModal && (
-        <Modal title="Edit Project" onClose={() => setEditProjectModal(false)} width="560px">
-          <form onSubmit={handleProjectSave} className="form">
-            <label>Name *
-              <input autoFocus value={projectForm.name} onChange={e => setProjectForm(f => ({ ...f, name: e.target.value }))} required />
+        <Modal title="Edit Project" onClose={() => setEditProjectModal(false)} width="540px">
+          <form onSubmit={handleProjectSave} className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Name</span>
+              <input autoFocus className={inputCls} value={projectForm.name} onChange={e => setProjectForm(f => ({ ...f, name: e.target.value }))} required />
             </label>
-            <label>Description
-              <textarea value={projectForm.description} onChange={e => setProjectForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Description</span>
+              <textarea className={inputCls} value={projectForm.description} onChange={e => setProjectForm(f => ({ ...f, description: e.target.value }))} rows={2} />
             </label>
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <p className="form-section-label" style={{ margin: 0 }}>Columns</p>
-                <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={addColumn}>+ Add Column</button>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Columns</p>
+                <button type="button" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 transition-colors" onClick={addColumn}>+ Add Column</button>
               </div>
-              <div className="column-list">
+              <div className="space-y-2">
                 {(projectForm.columns || []).map((col, idx) => (
-                  <div key={col.key} className="column-item">
-                    <input type="color" value={col.color} onChange={e => updateColumn(idx, 'color', e.target.value)} className="column-color-input" title="Column color" />
-                    <input value={col.label} onChange={e => updateColumn(idx, 'label', e.target.value)} placeholder="Column name" className="column-label-input" />
+                  <div key={col.key} className="flex items-center gap-2">
+                    <input type="color" value={col.color} onChange={e => updateColumn(idx, 'color', e.target.value)} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-zinc-700 cursor-pointer p-0.5 flex-shrink-0" />
+                    <input className={inputCls} value={col.label} onChange={e => updateColumn(idx, 'label', e.target.value)} placeholder="Column name" />
                     {(projectForm.columns || []).length > 1 && (
-                      <button type="button" className="btn-icon danger sm" onClick={() => removeColumn(idx)}>✕</button>
+                      <button type="button" className="w-7 h-7 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs" onClick={() => removeColumn(idx)}>✕</button>
                     )}
                   </div>
                 ))}
               </div>
             </div>
-            <div className="form-actions">
-              <button type="button" className="btn-ghost" onClick={() => setEditProjectModal(false)}>Cancel</button>
-              <button type="submit" className="btn-primary">Save Changes</button>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={() => setEditProjectModal(false)}>Cancel</button>
+              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">Save Changes</button>
             </div>
           </form>
         </Modal>
