@@ -8,7 +8,7 @@ import { db } from './db.js'
 const { FieldValue } = admin.firestore
 
 const app = express()
-app.use(cors({ origin: ['https://joanna-bot.web.app', 'http://localhost:5173'] }))
+app.use(cors({ origin: ['https://joanna-bot.web.app', 'https://taskflow-pm-lovat.vercel.app', 'http://localhost:5173'] }))
 app.use(express.json())
 
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
