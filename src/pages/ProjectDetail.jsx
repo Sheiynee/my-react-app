@@ -231,12 +231,12 @@ export default function ProjectDetail() {
     setActiveTask(projectTasks.find(t => t.id === active.id) || null)
   }
 
-  async function handleDragEnd({ active, over }) {
+  function handleDragEnd({ active, over }) {
     setActiveTask(null)
     if (!over) return
     const task = projectTasks.find(t => t.id === active.id)
     if (!task || task.status === over.id) return
-    await moveTask(task, over.id)
+    moveTask(task, over.id)
   }
 
   const lastColKey = columns[columns.length - 1]?.key

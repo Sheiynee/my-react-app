@@ -48,9 +48,16 @@ export function AppProvider({ children }) {
     return t
   }
   async function editTask(id, data) {
-    const t = await api.updateTask(id, data)
-    setTasks(prev => prev.map(x => x.id === id ? t : x))
-    return t
+    const original = tasks.find(x => x.id === id)
+    setTasks(prev => prev.map(x => x.id === id ? { ...x, ...data } : x))
+    try {
+      const t = await api.updateTask(id, data)
+      setTasks(prev => prev.map(x => x.id === id ? t : x))
+      return t
+    } catch (err) {
+      setTasks(prev => prev.map(x => x.id === id ? original : x))
+      throw err
+    }
   }
   async function removeTask(id) {
     await api.deleteTask(id)
