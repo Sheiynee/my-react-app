@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { AppProvider } from './context/AppContext'
+import { AppProvider, useApp } from './context/AppContext'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import Projects from './pages/Projects'
@@ -8,6 +8,48 @@ import ProjectDetail from './pages/ProjectDetail'
 import Notes from './pages/Notes'
 import Team from './pages/Team'
 import './App.css'
+
+function AppShell({ dark, onToggleDark }) {
+  const { loading, error } = useApp()
+
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-black">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-500 dark:text-zinc-400">Loading…</p>
+      </div>
+    </div>
+  )
+
+  if (error) return (
+    <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-black">
+      <div className="flex flex-col items-center gap-3 max-w-sm text-center px-6">
+        <div className="w-12 h-12 bg-red-50 dark:bg-red-500/10 rounded-2xl flex items-center justify-center text-2xl">⚠️</div>
+        <p className="text-sm font-medium text-gray-900 dark:text-zinc-100">Failed to connect</p>
+        <p className="text-xs text-gray-500 dark:text-zinc-400">{error}</p>
+        <button
+          className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+          onClick={() => window.location.reload()}
+        >Retry</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-black">
+      <Sidebar dark={dark} onToggleDark={onToggleDark} />
+      <main className="flex-1 overflow-y-auto">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
+          <Route path="/notes" element={<Notes />} />
+          <Route path="/team" element={<Team />} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
 
 export default function App() {
   const [dark, setDark] = useState(() => {
@@ -24,18 +66,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppProvider>
-        <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-black">
-          <Sidebar dark={dark} onToggleDark={() => setDark(d => !d)} />
-          <main className="flex-1 overflow-y-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/projects" element={<Projects />} />
-              <Route path="/projects/:id" element={<ProjectDetail />} />
-              <Route path="/notes" element={<Notes />} />
-              <Route path="/team" element={<Team />} />
-            </Routes>
-          </main>
-        </div>
+        <AppShell dark={dark} onToggleDark={() => setDark(d => !d)} />
       </AppProvider>
     </BrowserRouter>
   )

@@ -9,6 +9,7 @@ export function AppProvider({ children }) {
   const [members, setMembers] = useState([])
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     Promise.all([api.getProjects(), api.getTasks(), api.getMembers(), api.getNotes()])
@@ -18,6 +19,7 @@ export function AppProvider({ children }) {
         setMembers(m)
         setNotes(n)
       })
+      .catch(err => setError(err.message || 'Failed to load data'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -94,7 +96,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      projects, tasks, members, notes, loading,
+      projects, tasks, members, notes, loading, error,
       addProject, editProject, removeProject,
       addTask, editTask, removeTask,
       addMember, editMember, removeMember,

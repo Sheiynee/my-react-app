@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import Modal from '../components/Modal'
 import RichTextEditor from '../components/RichTextEditor'
 import * as api from '../api'
+import { priorityBadge } from '../constants'
 import {
   DndContext, DragOverlay, PointerSensor,
   useSensor, useSensors, useDroppable, useDraggable,
@@ -20,13 +21,6 @@ const PRIORITIES = ['low', 'medium', 'high', 'urgent']
 const EMPTY_TASK = {
   title: '', description: '', status: 'todo', priority: 'medium',
   assigneeIds: [], dueDate: '', parentId: null, links: [],
-}
-
-const priorityBadge = {
-  low: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  medium: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  high: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  urgent: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400',
 }
 
 const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
@@ -102,6 +96,10 @@ export default function ProjectDetail() {
     setTaskModal({ mode: 'create' })
   }
 
+  function openViewTask(task) {
+    setTaskModal({ mode: 'view', id: task.id, task })
+  }
+
   function openEditTask(task) {
     setTaskForm({
       title: task.title,
@@ -125,7 +123,8 @@ export default function ProjectDetail() {
 
   async function handleTaskSubmit(e) {
     e.preventDefault()
-    const data = { ...taskForm, projectId: id, dueDate: taskForm.dueDate || null }
+    if (!taskForm.title.trim()) return
+    const data = { ...taskForm, title: taskForm.title.trim(), projectId: id, dueDate: taskForm.dueDate || null }
     if (taskModal.mode === 'create') await addTask(data)
     else await editTask(taskModal.id, data)
     closeTaskModal()
@@ -162,8 +161,9 @@ export default function ProjectDetail() {
   }
 
   function addLink() {
-    if (!linkInput.url.trim()) return
     const url = linkInput.url.trim()
+    if (!url) return
+    try { new URL(url) } catch { alert('Please enter a valid URL (e.g. https://example.com)'); return }
     setTaskForm(f => ({ ...f, links: [...(f.links || []), { url, label: linkInput.label.trim() || url }] }))
     setLinkInput({ url: '', label: '' })
   }
@@ -254,7 +254,7 @@ export default function ProjectDetail() {
     return (
       <div
         className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden hover:border-blue-200 dark:hover:border-zinc-700 hover:shadow-md transition-all cursor-pointer flex group"
-        onClick={() => openEditTask(task)}
+        onClick={() => openViewTask(task)}
       >
         <div className={`w-1 flex-shrink-0 priority-bar-${task.priority}`} />
         <div className="flex-1 p-3">
@@ -377,8 +377,89 @@ export default function ProjectDetail() {
         </DragOverlay>
       </DndContext>
 
+      {/* View task modal */}
+      {taskModal?.mode === 'view' && (() => {
+        const t = taskModal.task
+        const assigneeIds = getAssigneeIds(t)
+        const assignees = assigneeIds.map(memberById).filter(Boolean)
+        const subs = subtasksOf(t.id)
+        const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date()
+        return (
+          <Modal title={t.title} onClose={closeTaskModal} width="600px">
+            <div className="flex flex-col gap-4">
+              {/* Meta row */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize ${priorityBadge[t.priority]}`}>{t.priority}</span>
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 capitalize">{t.status.replace('_', ' ')}</span>
+                {t.dueDate && (
+                  <span className={`text-xs px-2.5 py-1 rounded-full ${isOverdue ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-zinc-800'}`}>
+                    Due {new Date(t.dueDate).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
+              {/* Assignees */}
+              {assignees.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Assignees</p>
+                  <div className="flex flex-wrap gap-2">
+                    {assignees.map(a => (
+                      <div key={a.id} className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: a.color }}>{a.name[0]?.toUpperCase()}</span>
+                        <span className="text-sm text-gray-700 dark:text-zinc-300">{a.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              {t.description && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Description</p>
+                  <div className="text-sm text-gray-700 dark:text-zinc-300 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: t.description }} />
+                </div>
+              )}
+
+              {/* Links */}
+              {t.links?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Links</p>
+                  <div className="flex flex-col gap-1.5">
+                    {t.links.map((link, i) => (
+                      <a key={i} href={link.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate">🔗 {link.label}</a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Subtasks */}
+              {subs.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Subtasks ({subs.filter(s => s.status === 'done').length}/{subs.length})</p>
+                  <div className="space-y-1">
+                    {subs.map(s => (
+                      <div key={s.id} className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${s.status === 'done' ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-zinc-600'}`} />
+                        <span className={`text-sm ${s.status === 'done' ? 'line-through text-gray-400 dark:text-zinc-600' : 'text-gray-700 dark:text-zinc-300'}`}>{s.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-1 border-t border-gray-100 dark:border-zinc-800">
+                <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={() => handleDeleteTask(t.id)}>Delete</button>
+                <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openEditTask(t)}>Edit</button>
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
+
       {/* Task modal */}
-      {taskModal && (
+      {taskModal && taskModal.mode !== 'view' && (
         <Modal title={taskModal.mode === 'create' ? 'New Task' : 'Edit Task'} onClose={closeTaskModal} width="700px">
           <form onSubmit={handleTaskSubmit} className="flex flex-col gap-4">
             <label className="flex flex-col gap-1.5">

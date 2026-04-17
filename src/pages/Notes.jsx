@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import Modal from '../components/Modal'
+import { stripHtml } from '../constants'
 
 const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
 
 const EMPTY = { title: '', content: '', projectId: '' }
-
-function stripHtml(html) {
-  return html.replace(/<[^>]*>/g, '')
-}
 
 export default function Notes() {
   const { notes, projects, addNote, editNote, removeNote } = useApp()
@@ -90,7 +87,7 @@ export default function Notes() {
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 leading-snug">{n.title || 'Untitled'}</h3>
                   <button
                     className="w-6 h-6 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-300 dark:text-zinc-700 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                    onClick={e => { e.stopPropagation(); removeNote(n.id) }}
+                    onClick={e => { e.stopPropagation(); if (confirm('Delete this note?')) removeNote(n.id) }}
                     title="Delete"
                   >
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
