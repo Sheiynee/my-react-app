@@ -14,6 +14,7 @@ export default function Projects() {
   const navigate = useNavigate()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
 
   function openCreate() { setForm(EMPTY_FORM); setModal({ mode: 'create' }) }
   function openEdit(p) {
@@ -25,9 +26,14 @@ export default function Projects() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.name.trim()) return
-    if (modal.mode === 'create') await addProject(form)
-    else await editProject(modal.id, form)
-    closeModal()
+    setSaving(true)
+    try {
+      if (modal.mode === 'create') await addProject(form)
+      else await editProject(modal.id, form)
+      closeModal()
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleDelete(e, id) {
@@ -157,6 +163,8 @@ export default function Projects() {
                   <button
                     key={c}
                     type="button"
+                    aria-label={`Select color ${c}`}
+                    aria-pressed={form.color === c}
                     className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-2 ring-gray-300 dark:ring-zinc-600' : 'hover:scale-110'}`}
                     style={{ background: c }}
                     onClick={() => setForm(f => ({ ...f, color: c }))}
@@ -166,8 +174,8 @@ export default function Projects() {
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                {modal.mode === 'create' ? 'Create Project' : 'Save Changes'}
+              <button type="submit" disabled={saving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : modal.mode === 'create' ? 'Create Project' : 'Save Changes'}
               </button>
             </div>
           </form>

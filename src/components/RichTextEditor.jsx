@@ -2,10 +2,18 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect } from 'react'
 
+const ARIA = {
+  'B': 'Bold', 'I': 'Italic', 'S': 'Strikethrough',
+  '• List': 'Bullet list', '1. List': 'Ordered list',
+  'Code': 'Inline code', 'Block': 'Code block', 'Clear': 'Clear formatting',
+}
+
 const ToolbarBtn = ({ label, onClick, active }) => (
   <button
     type="button"
     onClick={onClick}
+    aria-label={ARIA[label] || label}
+    aria-pressed={active}
     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
       active
         ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-zinc-100'

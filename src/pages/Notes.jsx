@@ -12,6 +12,7 @@ export default function Notes() {
   const [filter, setFilter] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY)
+  const [saving, setSaving] = useState(false)
 
   const filtered = [...notes]
     .filter(n => !filter || n.projectId === filter)
@@ -27,9 +28,14 @@ export default function Notes() {
   async function handleSubmit(e) {
     e.preventDefault()
     const data = { ...form, projectId: form.projectId || null }
-    if (modal.mode === 'create') await addNote(data)
-    else await editNote(modal.id, data)
-    closeModal()
+    setSaving(true)
+    try {
+      if (modal.mode === 'create') await addNote(data)
+      else await editNote(modal.id, data)
+      closeModal()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const projectName = (id) => projects.find(p => p.id === id)?.name
@@ -55,6 +61,7 @@ export default function Notes() {
       {/* Filter */}
       <div className="mb-6">
         <select
+          aria-label="Filter by project"
           className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-700 dark:text-zinc-300 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors max-w-[200px]"
           value={filter}
           onChange={e => setFilter(e.target.value)}
@@ -94,7 +101,7 @@ export default function Notes() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-400 dark:text-zinc-500 leading-relaxed mb-4 line-clamp-3">
-                  {stripHtml(n.content).slice(0, 120)}{stripHtml(n.content).length > 120 ? '…' : ''}
+                  {stripHtml(n.content)}
                 </p>
                 <div className="flex items-center justify-between">
                   {n.projectId
@@ -129,8 +136,8 @@ export default function Notes() {
             </label>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                {modal.mode === 'create' ? 'Save Note' : 'Update Note'}
+              <button type="submit" disabled={saving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : modal.mode === 'create' ? 'Save Note' : 'Update Note'}
               </button>
             </div>
           </form>

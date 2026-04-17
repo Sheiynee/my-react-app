@@ -11,6 +11,7 @@ export default function Team() {
   const { members, tasks, addMember, editMember, removeMember } = useApp()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY)
+  const [saving, setSaving] = useState(false)
 
   function openCreate() { setForm(EMPTY); setModal({ mode: 'create' }) }
   function openEdit(m) {
@@ -22,9 +23,14 @@ export default function Team() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.name.trim()) return
-    if (modal.mode === 'create') await addMember(form)
-    else await editMember(modal.id, form)
-    closeModal()
+    setSaving(true)
+    try {
+      if (modal.mode === 'create') await addMember(form)
+      else await editMember(modal.id, form)
+      closeModal()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const taskCount = (id) => tasks.filter(t => (t.assigneeIds?.includes(id) || t.assigneeId === id) && !t.parentId).length
@@ -81,13 +87,15 @@ export default function Team() {
                   <button
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors"
                     onClick={() => openEdit(m)}
+                    aria-label={`Edit ${m.name}`}
                     title="Edit"
                   >
                     <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9.5 1.5a1.414 1.414 0 0 1 2 2L4 11H1.5V8.5L9.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>
                   </button>
                   <button
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
-                    onClick={() => removeMember(m.id)}
+                    onClick={() => { if (confirm(`Remove ${m.name} from the team?`)) removeMember(m.id) }}
+                    aria-label={`Remove ${m.name}`}
                     title="Remove"
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
@@ -121,6 +129,8 @@ export default function Team() {
                   <button
                     key={c}
                     type="button"
+                    aria-label={`Select color ${c}`}
+                    aria-pressed={form.color === c}
                     className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-2 ring-gray-300 dark:ring-zinc-600' : 'hover:scale-110'}`}
                     style={{ background: c }}
                     onClick={() => setForm(f => ({ ...f, color: c }))}
@@ -130,8 +140,8 @@ export default function Team() {
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                {modal.mode === 'create' ? 'Add Member' : 'Save Changes'}
+              <button type="submit" disabled={saving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : modal.mode === 'create' ? 'Add Member' : 'Save Changes'}
               </button>
             </div>
           </form>

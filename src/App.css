@@ -24,3 +24,11 @@
 .priority-bar-medium { background: #eab308; }
 .priority-bar-high   { background: #f97316; }
 .priority-bar-urgent { background: #ef4444; }
+
+/* Global keyboard focus ring */
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+:focus:not(:focus-visible) { outline: none; }

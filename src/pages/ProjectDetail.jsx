@@ -68,6 +68,8 @@ export default function ProjectDetail() {
   const [activeTask, setActiveTask] = useState(null)
   const [editProjectModal, setEditProjectModal] = useState(false)
   const [projectForm, setProjectForm] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [projectSaving, setProjectSaving] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -124,10 +126,15 @@ export default function ProjectDetail() {
   async function handleTaskSubmit(e) {
     e.preventDefault()
     if (!taskForm.title.trim()) return
-    const data = { ...taskForm, title: taskForm.title.trim(), projectId: id, dueDate: taskForm.dueDate || null }
-    if (taskModal.mode === 'create') await addTask(data)
-    else await editTask(taskModal.id, data)
-    closeTaskModal()
+    setSaving(true)
+    try {
+      const data = { ...taskForm, title: taskForm.title.trim(), projectId: id, dueDate: taskForm.dueDate || null }
+      if (taskModal.mode === 'create') await addTask(data)
+      else await editTask(taskModal.id, data)
+      closeTaskModal()
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function addSubtask() {
@@ -223,8 +230,13 @@ export default function ProjectDetail() {
 
   async function handleProjectSave(e) {
     e.preventDefault()
-    await editProject(id, projectForm)
-    setEditProjectModal(false)
+    setProjectSaving(true)
+    try {
+      await editProject(id, projectForm)
+      setEditProjectModal(false)
+    } finally {
+      setProjectSaving(false)
+    }
   }
 
   function handleDragStart({ active }) {
@@ -342,7 +354,8 @@ export default function ProjectDetail() {
 
       {/* Kanban board */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))` }}>
+        <div className="overflow-x-auto -mx-8 px-8 pb-2">
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))`, minWidth: `${columns.length * 276}px` }}>
           {columns.map(col => {
             const colTasks = projectTasks.filter(t => t.status === col.key)
             return (
@@ -354,6 +367,7 @@ export default function ProjectDetail() {
                   <button
                     className="ml-auto w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-600 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors text-base leading-none"
                     onClick={() => openCreateTask(col.key)}
+                    aria-label={`Add task to ${col.label}`}
                     title="Add task"
                   >+</button>
                 </div>
@@ -367,6 +381,7 @@ export default function ProjectDetail() {
               </div>
             )
           })}
+        </div>
         </div>
         <DragOverlay>
           {activeTask && (
@@ -554,6 +569,7 @@ export default function ProjectDetail() {
                         type="checkbox"
                         checked={s.status === 'done'}
                         onChange={() => editTask(s.id, { status: s.status === 'done' ? 'todo' : 'done' })}
+                        aria-label={`Mark "${s.title}" as ${s.status === 'done' ? 'incomplete' : 'complete'}`}
                         className="accent-emerald-500 w-4 h-4 flex-shrink-0"
                       />
                       <span className={`flex-1 text-sm ${s.status === 'done' ? 'line-through text-gray-400 dark:text-zinc-600' : 'text-gray-800 dark:text-zinc-200'}`}>{s.title}</span>
@@ -604,8 +620,8 @@ export default function ProjectDetail() {
               {taskModal.mode === 'edit' && (
                 <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:border-red-200 transition-colors" onClick={() => handleDeleteTask(taskModal.id)}>Delete</button>
               )}
-              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                {taskModal.mode === 'create' ? 'Create Task' : 'Save Changes'}
+              <button type="submit" disabled={saving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : taskModal.mode === 'create' ? 'Create Task' : 'Save Changes'}
               </button>
             </div>
           </form>
@@ -632,7 +648,7 @@ export default function ProjectDetail() {
               <div className="space-y-2">
                 {(projectForm.columns || []).map((col, idx) => (
                   <div key={col.key} className="flex items-center gap-2">
-                    <input type="color" value={col.color} onChange={e => updateColumn(idx, 'color', e.target.value)} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-zinc-700 cursor-pointer p-0.5 flex-shrink-0" />
+                    <input type="color" value={col.color} onChange={e => updateColumn(idx, 'color', e.target.value)} aria-label={`Color for column ${col.label}`} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-zinc-700 cursor-pointer p-0.5 flex-shrink-0" />
                     <input className={inputCls} value={col.label} onChange={e => updateColumn(idx, 'label', e.target.value)} placeholder="Column name" />
                     {(projectForm.columns || []).length > 1 && (
                       <button type="button" className="w-7 h-7 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs" onClick={() => removeColumn(idx)}>✕</button>
@@ -643,7 +659,9 @@ export default function ProjectDetail() {
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={() => setEditProjectModal(false)}>Cancel</button>
-              <button type="submit" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors">Save Changes</button>
+              <button type="submit" disabled={projectSaving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {projectSaving ? 'Saving…' : 'Save Changes'}
+              </button>
             </div>
           </form>
         </Modal>
