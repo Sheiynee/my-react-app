@@ -8,7 +8,21 @@ import { db } from './db.js'
 const { FieldValue } = admin.firestore
 
 const app = express()
-app.use(cors({ origin: ['https://joanna-bot.web.app', 'https://taskflow-pm-lovat.vercel.app', 'http://localhost:5173'] }))
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'https://joanna-bot.web.app',
+  'https://taskflow-pm-lovat.vercel.app',
+]
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true)
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+    if (/^https:\/\/taskflow-.*\.vercel\.app$/.test(origin)) return cb(null, true)
+    if (/^https:\/\/.*-sheiynees-projects\.vercel\.app$/.test(origin)) return cb(null, true)
+    cb(new Error(`CORS: ${origin} not allowed`))
+  },
+}))
 app.use(express.json())
 
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
