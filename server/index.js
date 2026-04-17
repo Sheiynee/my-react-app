@@ -75,7 +75,6 @@ app.post('/api/tasks', async (req, res) => {
   const task = {
     projectId: null,
     parentId: null,
-    title: '',
     description: '',
     status: 'todo',
     priority: 'medium',
