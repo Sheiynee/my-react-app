@@ -7,6 +7,7 @@ import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import Notes from './pages/Notes'
 import Team from './pages/Team'
+import ErrorBoundary from './components/ErrorBoundary'
 import './App.css'
 
 function AppShell({ dark, onToggleDark }) {
@@ -64,10 +65,12 @@ export default function App() {
   }, [dark])
 
   return (
-    <BrowserRouter>
-      <AppProvider>
-        <AppShell dark={dark} onToggleDark={() => setDark(d => !d)} />
-      </AppProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AppProvider>
+          <AppShell dark={dark} onToggleDark={() => setDark(d => !d)} />
+        </AppProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
