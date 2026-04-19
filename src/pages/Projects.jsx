@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Modal from '../components/Modal'
+import { canDo } from '../roles'
 
 const COLORS = ['#2563eb', '#16a34a', '#d97706', '#ea580c', '#7c3aed', '#dc2626', '#0891b2', '#db2777']
 
@@ -10,7 +11,7 @@ const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark
 const EMPTY_FORM = { name: '', description: '', color: '#2563eb' }
 
 export default function Projects() {
-  const { projects, tasks, members, addProject, editProject, removeProject } = useApp()
+  const { projects, tasks, members, addProject, editProject, removeProject, getProjectRole } = useApp()
   const navigate = useNavigate()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -97,22 +98,31 @@ export default function Projects() {
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 leading-snug">{p.name}</h3>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                        <button
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors"
-                          onClick={() => openEdit(p)}
-                          title="Edit"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9.5 1.5a1.414 1.414 0 0 1 2 2L4 11H1.5V8.5L9.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>
-                        </button>
-                        <button
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
-                          onClick={(e) => handleDelete(e, p.id)}
-                          title="Delete"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                        </button>
-                      </div>
+                      {(() => {
+                        const myRole = getProjectRole(p.id)
+                        return (canDo(myRole, 'manager') || canDo(myRole, 'admin')) && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                            {canDo(myRole, 'manager') && (
+                              <button
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors"
+                                onClick={() => openEdit(p)}
+                                title="Edit"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9.5 1.5a1.414 1.414 0 0 1 2 2L4 11H1.5V8.5L9.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>
+                              </button>
+                            )}
+                            {canDo(myRole, 'admin') && (
+                              <button
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                                onClick={(e) => handleDelete(e, p.id)}
+                                title="Delete"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     <p className="text-xs text-gray-400 dark:text-zinc-500 mb-2 truncate">{p.description || 'No description'}</p>

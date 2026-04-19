@@ -45,6 +45,24 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// ── Role helpers ───────────────────────────────────────────
+
+const ROLE_RANK = { viewer: 0, member: 1, manager: 2, admin: 3 }
+const VALID_ROLES = new Set(Object.keys(ROLE_RANK))
+
+function hasRole(userRole, minRole) {
+  return (ROLE_RANK[userRole] ?? -1) >= ROLE_RANK[minRole]
+}
+
+// For projects without roles set, creator is admin; anyone else is member.
+function getUserProjectRole(uid, projectData) {
+  const { roles, createdBy } = projectData
+  if (!roles || Object.keys(roles).length === 0) {
+    return createdBy === uid ? 'admin' : 'member'
+  }
+  return roles[uid] || null
+}
+
 // ── Discord OAuth ──────────────────────────────────────────
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID
@@ -156,11 +174,29 @@ app.put('/api/me', requireAuth, async (req, res) => {
   res.json({ uid: req.user.uid, ...update })
 })
 
+// ── Users list ─────────────────────────────────────────────
+
+app.get('/api/users', requireAuth, async (req, res) => {
+  const snap = await db.collection('users').get()
+  res.json(snap.docs.map(d => ({
+    uid: d.id,
+    displayName: d.data().displayName,
+    email: d.data().email,
+    photoURL: d.data().photoURL,
+  })))
+})
+
 // ── Projects ──────────────────────────────────────────────
 
 app.get('/api/projects', requireAuth, async (req, res) => {
   const snap = await db.collection('projects').get()
   res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+})
+
+app.get('/api/projects/:id', requireAuth, async (req, res) => {
+  const doc = await db.collection('projects').doc(req.params.id).get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  res.json({ id: doc.id, ...doc.data() })
 })
 
 app.post('/api/projects', requireAuth, async (req, res) => {
@@ -173,6 +209,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
     memberIds: [],
     ...req.body,
     name: name.trim(),
+    roles: { [req.user.uid]: 'admin' },
     createdAt: new Date().toISOString(),
     createdBy: req.user.uid,
     createdByName: req.user.name || req.user.email || 'Unknown',
@@ -185,18 +222,92 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
   const ref = db.collection('projects').doc(req.params.id)
   const doc = await ref.get()
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
-  await ref.update(req.body)
-  res.json({ id: req.params.id, ...doc.data(), ...req.body })
+  const role = getUserProjectRole(req.user.uid, doc.data())
+  if (!hasRole(role, 'manager')) return res.status(403).json({ error: 'Forbidden' })
+  // Protect the roles map from being overwritten via this endpoint
+  const { roles: _roles, ...safeBody } = req.body
+  await ref.update(safeBody)
+  res.json({ id: req.params.id, ...doc.data(), ...safeBody })
 })
 
 app.delete('/api/projects/:id', requireAuth, async (req, res) => {
-  await db.collection('projects').doc(req.params.id).delete()
+  const ref = db.collection('projects').doc(req.params.id)
+  const doc = await ref.get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const role = getUserProjectRole(req.user.uid, doc.data())
+  if (!hasRole(role, 'admin')) return res.status(403).json({ error: 'Forbidden' })
+  await ref.delete()
   const taskSnap = await db.collection('tasks').where('projectId', '==', req.params.id).get()
   const noteSnap = await db.collection('notes').where('projectId', '==', req.params.id).get()
   const batch = db.batch()
   taskSnap.docs.forEach(d => batch.delete(d.ref))
   noteSnap.docs.forEach(d => batch.delete(d.ref))
   await batch.commit()
+  res.json({ ok: true })
+})
+
+// ── Project members (roles) ────────────────────────────────
+
+app.get('/api/projects/:id/members', requireAuth, async (req, res) => {
+  const doc = await db.collection('projects').doc(req.params.id).get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const role = getUserProjectRole(req.user.uid, doc.data())
+  if (!role) return res.status(403).json({ error: 'Forbidden' })
+  const roles = doc.data().roles || {}
+  const uids = Object.keys(roles)
+  if (uids.length === 0) return res.json([])
+  const userDocs = await Promise.all(uids.map(uid => db.collection('users').doc(uid).get()))
+  const members = userDocs.map((d, i) => ({
+    uid: uids[i],
+    role: roles[uids[i]],
+    displayName: d.exists ? d.data().displayName : uids[i],
+    email: d.exists ? d.data().email : null,
+    photoURL: d.exists ? d.data().photoURL : null,
+  }))
+  res.json(members)
+})
+
+app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
+  const { uid, role } = req.body
+  if (!uid || typeof uid !== 'string') return bad(res, 'uid is required')
+  if (!role || !VALID_ROLES.has(role)) return bad(res, `role must be one of: ${[...VALID_ROLES].join(', ')}`)
+  const ref = db.collection('projects').doc(req.params.id)
+  const doc = await ref.get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const myRole = getUserProjectRole(req.user.uid, doc.data())
+  if (!hasRole(myRole, 'manager')) return res.status(403).json({ error: 'Forbidden' })
+  if (!hasRole(myRole, 'admin') && hasRole(role, 'manager')) {
+    return res.status(403).json({ error: 'Only admins can assign manager or admin roles' })
+  }
+  await ref.update({ [`roles.${uid}`]: role })
+  res.json({ uid, role })
+})
+
+app.put('/api/projects/:id/members/:uid', requireAuth, async (req, res) => {
+  const { role } = req.body
+  if (!role || !VALID_ROLES.has(role)) return bad(res, `role must be one of: ${[...VALID_ROLES].join(', ')}`)
+  const ref = db.collection('projects').doc(req.params.id)
+  const doc = await ref.get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const myRole = getUserProjectRole(req.user.uid, doc.data())
+  if (!hasRole(myRole, 'admin')) return res.status(403).json({ error: 'Only admins can change roles' })
+  if (req.params.uid === req.user.uid) return bad(res, 'Cannot change your own role')
+  await ref.update({ [`roles.${req.params.uid}`]: role })
+  res.json({ uid: req.params.uid, role })
+})
+
+app.delete('/api/projects/:id/members/:uid', requireAuth, async (req, res) => {
+  const ref = db.collection('projects').doc(req.params.id)
+  const doc = await ref.get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const myRole = getUserProjectRole(req.user.uid, doc.data())
+  if (!hasRole(myRole, 'admin')) return res.status(403).json({ error: 'Only admins can remove members' })
+  const roles = doc.data().roles || {}
+  const adminCount = Object.values(roles).filter(r => r === 'admin').length
+  if (req.params.uid === req.user.uid && adminCount <= 1) {
+    return bad(res, 'Cannot remove yourself as the only admin')
+  }
+  await ref.update({ [`roles.${req.params.uid}`]: FieldValue.delete() })
   res.json({ ok: true })
 })
 
@@ -214,6 +325,10 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
   if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
   if (!projectId || typeof projectId !== 'string') return bad(res, 'projectId is required')
   if (priority && !VALID_PRIORITIES.has(priority)) return bad(res, `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`)
+  const projectDoc = await db.collection('projects').doc(projectId).get()
+  if (!projectDoc.exists) return res.status(404).json({ error: 'Project not found' })
+  const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+  if (!hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
   const id = uuid()
   const task = {
     projectId: null,
@@ -240,8 +355,14 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   const ref = db.collection('tasks').doc(req.params.id)
   const doc = await ref.get()
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
-  const updated = { ...doc.data(), ...req.body }
-  if (req.body.status === 'done' && !doc.data().completedAt) {
+  const task = doc.data()
+  const projectDoc = await db.collection('projects').doc(task.projectId).get()
+  const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
+  if (!hasRole(projectRole, 'member') && task.createdBy !== req.user.uid) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const updated = { ...task, ...req.body }
+  if (req.body.status === 'done' && !task.completedAt) {
     updated.completedAt = new Date().toISOString()
   } else if (req.body.status && req.body.status !== 'done') {
     updated.completedAt = null
@@ -251,6 +372,14 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
 })
 
 app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
+  const taskDoc = await db.collection('tasks').doc(req.params.id).get()
+  if (!taskDoc.exists) return res.status(404).json({ error: 'Not found' })
+  const task = taskDoc.data()
+  const projectDoc = await db.collection('projects').doc(task.projectId).get()
+  const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
+  if (!hasRole(projectRole, 'manager') && task.createdBy !== req.user.uid) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
   await db.collection('tasks').doc(req.params.id).delete()
   const [subSnap, commentSnap] = await Promise.all([
     db.collection('tasks').where('parentId', '==', req.params.id).get(),
@@ -322,6 +451,13 @@ app.get('/api/notes', requireAuth, async (req, res) => {
 app.post('/api/notes', requireAuth, async (req, res) => {
   const { title } = req.body
   if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
+  if (req.body.projectId) {
+    const projectDoc = await db.collection('projects').doc(req.body.projectId).get()
+    if (projectDoc.exists) {
+      const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+      if (!hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
+    }
+  }
   const id = uuid()
   const note = {
     projectId: null,
@@ -341,12 +477,34 @@ app.put('/api/notes/:id', requireAuth, async (req, res) => {
   const ref = db.collection('notes').doc(req.params.id)
   const doc = await ref.get()
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
-  const updated = { ...doc.data(), ...req.body, updatedAt: new Date().toISOString() }
+  const note = doc.data()
+  if (note.projectId) {
+    const projectDoc = await db.collection('projects').doc(note.projectId).get()
+    if (projectDoc.exists) {
+      const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+      if (!hasRole(projectRole, 'member') && note.createdBy !== req.user.uid) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+  }
+  const updated = { ...note, ...req.body, updatedAt: new Date().toISOString() }
   await ref.update(updated)
   res.json({ id: req.params.id, ...updated })
 })
 
 app.delete('/api/notes/:id', requireAuth, async (req, res) => {
+  const doc = await db.collection('notes').doc(req.params.id).get()
+  if (!doc.exists) return res.status(404).json({ error: 'Not found' })
+  const note = doc.data()
+  if (note.projectId) {
+    const projectDoc = await db.collection('projects').doc(note.projectId).get()
+    if (projectDoc.exists) {
+      const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+      if (!hasRole(projectRole, 'manager') && note.createdBy !== req.user.uid) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+  }
   await db.collection('notes').doc(req.params.id).delete()
   res.json({ ok: true })
 })

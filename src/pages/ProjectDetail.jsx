@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Modal from '../components/Modal'
+import ProjectMembersModal from '../components/ProjectMembersModal'
 import RichTextEditor from '../components/RichTextEditor'
 import * as api from '../api'
+import { auth } from '../firebase'
 import { priorityBadge } from '../constants'
+import { canDo } from '../roles'
 import {
   DndContext, DragOverlay, PointerSensor,
   useSensor, useSensors, useDroppable, useDraggable,
@@ -52,11 +55,17 @@ function DraggableCard({ task, children }) {
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { projects, tasks, members, editProject, removeProject, addTask, editTask, removeTask } = useApp()
+  const { projects, tasks, members, editProject, removeProject, addTask, editTask, removeTask, getProjectRole, refreshProject } = useApp()
 
   const project = projects.find(p => p.id === id)
   const columns = project?.columns?.length ? project.columns : DEFAULT_COLUMNS
   const projectTasks = tasks.filter(t => t.projectId === id && !t.parentId)
+  const myRole = getProjectRole(id)
+  const currentUid = auth.currentUser?.uid
+  const canEdit = canDo(myRole, 'manager')
+  const canDelete = canDo(myRole, 'admin')
+  const canAddTask = canDo(myRole, 'member')
+  const canManageMembers = canDo(myRole, 'manager')
 
   const [taskModal, setTaskModal] = useState(null)
   const [taskForm, setTaskForm] = useState(EMPTY_TASK)
@@ -70,6 +79,7 @@ export default function ProjectDetail() {
   const [projectForm, setProjectForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [projectSaving, setProjectSaving] = useState(false)
+  const [membersModal, setMembersModal] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -319,7 +329,9 @@ export default function ProjectDetail() {
                 {colIdx < columns.length - 1 && (
                   <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => moveTask(task, columns[colIdx + 1].key)}>→</button>
                 )}
-                <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs" onClick={() => handleDeleteTask(task.id)}>✕</button>
+                {(canDo(myRole, 'manager') || task.createdBy === currentUid) && (
+                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs" onClick={() => handleDeleteTask(task.id)}>✕</button>
+                )}
               </div>
             )}
           </div>
@@ -341,9 +353,19 @@ export default function ProjectDetail() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-gray-400 dark:text-zinc-500">{done}/{projectTasks.length} done · {progress}%</span>
-          <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={openEditProject}>Edit</button>
-          <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={handleDeleteProject}>Delete</button>
-          <button className="text-sm font-medium px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openCreateTask()}>+ Add Task</button>
+          <button
+            className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors"
+            onClick={() => setMembersModal(true)}
+          >Members</button>
+          {canEdit && (
+            <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={openEditProject}>Edit</button>
+          )}
+          {canDelete && (
+            <button className="text-sm font-medium px-3 py-1.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={handleDeleteProject}>Delete</button>
+          )}
+          {canAddTask && (
+            <button className="text-sm font-medium px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openCreateTask()}>+ Add Task</button>
+          )}
         </div>
       </div>
 
@@ -364,12 +386,14 @@ export default function ProjectDetail() {
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.color }} />
                   <span className="text-xs font-semibold text-gray-700 dark:text-zinc-300">{col.label}</span>
                   <span className="text-xs text-gray-400 dark:text-zinc-600 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-full ml-0.5">{colTasks.length}</span>
-                  <button
-                    className="ml-auto w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-600 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors text-base leading-none"
-                    onClick={() => openCreateTask(col.key)}
-                    aria-label={`Add task to ${col.label}`}
-                    title="Add task"
-                  >+</button>
+                  {canAddTask && (
+                    <button
+                      className="ml-auto w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-600 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors text-base leading-none"
+                      onClick={() => openCreateTask(col.key)}
+                      aria-label={`Add task to ${col.label}`}
+                      title="Add task"
+                    >+</button>
+                  )}
                 </div>
                 <DroppableColumn id={col.key}>
                   {colTasks.map(task => (
@@ -472,8 +496,12 @@ export default function ProjectDetail() {
 
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-1 border-t border-gray-100 dark:border-zinc-800">
-                <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={() => handleDeleteTask(t.id)}>Delete</button>
-                <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openEditTask(t)}>Edit</button>
+                {(canDo(myRole, 'manager') || t.createdBy === currentUid) && (
+                  <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors" onClick={() => handleDeleteTask(t.id)}>Delete</button>
+                )}
+                {(canDo(myRole, 'member') || t.createdBy === currentUid) && (
+                  <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors" onClick={() => openEditTask(t)}>Edit</button>
+                )}
               </div>
             </div>
           </Modal>
@@ -624,7 +652,7 @@ export default function ProjectDetail() {
 
             <div className="flex justify-end gap-2 pt-1 border-t border-gray-100 dark:border-zinc-800">
               <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={closeTaskModal}>Cancel</button>
-              {taskModal.mode === 'edit' && (
+              {taskModal.mode === 'edit' && (canDo(myRole, 'manager') || tasks.find(t => t.id === taskModal.id)?.createdBy === currentUid) && (
                 <button type="button" className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:border-red-200 transition-colors" onClick={() => handleDeleteTask(taskModal.id)}>Delete</button>
               )}
               <button type="submit" disabled={saving} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
@@ -633,6 +661,18 @@ export default function ProjectDetail() {
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* Project members modal */}
+      {membersModal && (
+        <ProjectMembersModal
+          projectId={id}
+          myRole={myRole}
+          onClose={() => {
+            setMembersModal(false)
+            refreshProject(id)
+          }}
+        />
       )}
 
       {/* Edit project modal */}

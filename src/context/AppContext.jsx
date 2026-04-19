@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { auth } from '../firebase'
 import * as api from '../api'
 
 const AppContext = createContext(null)
@@ -23,6 +24,21 @@ export function AppProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
+  // Returns the current user's role string in the given project,
+  // or null if they have no access. Legacy projects (no roles map)
+  // fall back to: creator = admin, everyone else = member.
+  function getProjectRole(projectId) {
+    const uid = auth.currentUser?.uid
+    if (!uid) return null
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return null
+    const { roles, createdBy } = project
+    if (!roles || Object.keys(roles).length === 0) {
+      return createdBy === uid ? 'admin' : 'member'
+    }
+    return roles[uid] || null
+  }
+
   // Projects
   async function addProject(data) {
     const p = await api.createProject(data)
@@ -39,6 +55,11 @@ export function AppProvider({ children }) {
     setProjects(prev => prev.filter(x => x.id !== id))
     setTasks(prev => prev.filter(x => x.projectId !== id))
     setNotes(prev => prev.filter(x => x.projectId !== id))
+  }
+  async function refreshProject(id) {
+    const p = await api.getProject(id)
+    setProjects(prev => prev.map(x => x.id === id ? p : x))
+    return p
   }
 
   // Tasks
@@ -104,7 +125,8 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       projects, tasks, members, notes, loading, error,
-      addProject, editProject, removeProject,
+      getProjectRole,
+      addProject, editProject, removeProject, refreshProject,
       addTask, editTask, removeTask,
       addMember, editMember, removeMember,
       addNote, editNote, removeNote,

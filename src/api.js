@@ -48,3 +48,11 @@ export const deleteNote = (id) => req('DELETE', `/notes/${id}`)
 export const getComments = (taskId) => req('GET', `/comments?taskId=${taskId}`)
 export const createComment = (data) => req('POST', '/comments', data)
 export const deleteComment = (id) => req('DELETE', `/comments/${id}`)
+
+export const getUsers = () => req('GET', '/users')
+
+export const getProject = (id) => req('GET', `/projects/${id}`)
+export const getProjectMembers = (id) => req('GET', `/projects/${id}/members`)
+export const addProjectMember = (id, data) => req('POST', `/projects/${id}/members`, data)
+export const updateProjectMember = (id, uid, data) => req('PUT', `/projects/${id}/members/${uid}`, data)
+export const removeProjectMember = (id, uid) => req('DELETE', `/projects/${id}/members/${uid}`)
