@@ -115,7 +115,14 @@ export default function Projects() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-gray-400 dark:text-zinc-500 mb-4 truncate">{p.description || 'No description'}</p>
+                    <p className="text-xs text-gray-400 dark:text-zinc-500 mb-2 truncate">{p.description || 'No description'}</p>
+                    {(p.createdByName || p.createdAt) && (
+                      <p className="text-[10px] text-gray-300 dark:text-zinc-600 mb-3 truncate">
+                        {p.createdByName && <>By {p.createdByName}</>}
+                        {p.createdByName && p.createdAt && ' · '}
+                        {p.createdAt && new Date(p.createdAt).toLocaleDateString()}
+                      </p>
+                    )}
 
                     {/* Progress bar */}
                     <div className="h-1 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden mb-3">

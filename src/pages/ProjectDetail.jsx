@@ -412,6 +412,13 @@ export default function ProjectDetail() {
                   </span>
                 )}
               </div>
+              {(t.createdByName || t.createdAt) && (
+                <p className="text-[11px] text-gray-400 dark:text-zinc-500">
+                  {t.createdByName && <>Created by <span className="font-medium">{t.createdByName}</span></>}
+                  {t.createdByName && t.createdAt && ' · '}
+                  {t.createdAt && new Date(t.createdAt).toLocaleDateString()}
+                </p>
+              )}
 
               {/* Assignees */}
               {assignees.length > 0 && (

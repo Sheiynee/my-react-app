@@ -108,7 +108,10 @@ export default function Notes() {
                     ? <span className="text-[10px] font-medium px-2 py-0.5 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 rounded-full">{projectName(n.projectId)}</span>
                     : <span />
                   }
-                  <span className="text-[10px] text-gray-400 dark:text-zinc-600">{new Date(n.updatedAt).toLocaleDateString()}</span>
+                  <span className="text-[10px] text-gray-400 dark:text-zinc-600">
+                    {n.createdByName && <>{n.createdByName} · </>}
+                    {n.updatedAt && new Date(n.updatedAt).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
             ))}
