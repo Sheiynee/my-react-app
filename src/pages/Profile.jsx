@@ -1,64 +1,44 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { updateProfile } from 'firebase/auth'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { auth, storage } from '../firebase'
+import { auth } from '../firebase'
 import * as api from '../api'
 
 export default function Profile() {
   const { user } = useAuth()
-  const fileRef = useRef(null)
 
   const [displayName, setDisplayName] = useState(user?.displayName || '')
   const [bio, setBio] = useState('')
   const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone)
   const [photoURL, setPhotoURL] = useState(user?.photoURL || '')
-  const [uploading, setUploading] = useState(false)
+  const [photoInput, setPhotoInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
-  // Load existing profile from Firestore
   useEffect(() => {
     api.getMe().then(data => {
       setDisplayName(data.displayName || user?.displayName || '')
       setBio(data.bio || '')
       setTimezone(data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
       setPhotoURL(data.photoURL || user?.photoURL || '')
+      setPhotoInput(data.photoURL || user?.photoURL || '')
     }).catch(() => {})
   }, [user])
-
-  async function handleAvatarChange(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) { setError('Image must be under 5MB'); return }
-
-    setUploading(true)
-    setError('')
-    try {
-      const storageRef = ref(storage, `avatars/${user.uid}`)
-      await uploadBytes(storageRef, file)
-      const url = await getDownloadURL(storageRef)
-      setPhotoURL(url)
-      await updateProfile(auth.currentUser, { photoURL: url })
-    } catch (err) {
-      setError('Failed to upload image. Make sure Firebase Storage is enabled.')
-    } finally {
-      setUploading(false)
-    }
-  }
 
   async function handleSave(e) {
     e.preventDefault()
     if (!displayName.trim()) { setError('Display name is required'); return }
     setSaving(true)
     setError('')
+    const finalPhoto = photoInput.trim() || photoURL
     try {
-      await updateProfile(auth.currentUser, { displayName: displayName.trim(), photoURL })
-      await api.updateMe({ displayName: displayName.trim(), bio, timezone, photoURL })
+      await updateProfile(auth.currentUser, { displayName: displayName.trim(), photoURL: finalPhoto })
+      await api.updateMe({ displayName: displayName.trim(), bio, timezone, photoURL: finalPhoto })
+      setPhotoURL(finalPhoto)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-    } catch (err) {
+    } catch {
       setError('Failed to save. Please try again.')
     } finally {
       setSaving(false)
@@ -67,57 +47,47 @@ export default function Profile() {
 
   const initials = (displayName || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const isDiscord = user?.uid?.startsWith('discord_')
+  const previewURL = photoInput.trim() || photoURL
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10">
       <h1 className="text-xl font-semibold text-gray-900 dark:text-zinc-100 mb-8">Profile & Settings</h1>
 
       <form onSubmit={handleSave} className="space-y-8">
-        {/* Avatar */}
+        {/* Avatar preview */}
         <div className="flex items-center gap-6">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-200 dark:ring-zinc-700">
-              {photoURL ? (
-                <img src={photoURL} alt={displayName} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-2xl font-semibold">
-                  {initials}
-                </div>
-              )}
-            </div>
-            {uploading && (
-              <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-200 dark:ring-zinc-700 flex-shrink-0">
+            {previewURL ? (
+              <img src={previewURL} alt={displayName} className="w-full h-full object-cover"
+                onError={e => { e.target.style.display = 'none' }} />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-2xl font-semibold">
+                {initials}
               </div>
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="text-sm font-medium px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
-            >
-              {uploading ? 'Uploading…' : 'Upload photo'}
-            </button>
-            {isDiscord && user?.photoURL && photoURL !== user.photoURL && (
+          <div className="flex-1 space-y-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300">
+              Avatar URL
+            </label>
+            <input
+              type="url"
+              value={photoInput}
+              onChange={e => setPhotoInput(e.target.value)}
+              placeholder="https://example.com/your-photo.jpg"
+              className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {isDiscord && user?.photoURL && photoInput !== user.photoURL && (
               <button
                 type="button"
-                onClick={() => setPhotoURL(user.photoURL)}
-                className="text-xs text-blue-500 hover:underline text-left"
+                onClick={() => setPhotoInput(user.photoURL)}
+                className="text-xs text-blue-500 hover:underline"
               >
                 Reset to Discord avatar
               </button>
             )}
-            <p className="text-xs text-gray-400 dark:text-zinc-500">JPG, PNG or GIF · Max 5MB</p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
+            <p className="text-xs text-gray-400 dark:text-zinc-500">Paste any direct image URL</p>
           </div>
         </div>
 
