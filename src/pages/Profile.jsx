@@ -163,7 +163,7 @@ export default function Profile() {
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={saving || uploading}
+            disabled={saving}
             className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium transition-colors"
           >
             {saving ? 'Saving…' : 'Save changes'}
