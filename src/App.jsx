@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AppProvider, useApp } from './context/AppContext'
+import { AuthProvider } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
+import ProtectedRoute from './components/ProtectedRoute'
+import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import Notes from './pages/Notes'
 import Team from './pages/Team'
-import ErrorBoundary from './components/ErrorBoundary'
+import Login from './pages/Login'
 import './App.css'
 
 function AppShell({ dark, onToggleDark }) {
@@ -67,9 +70,26 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <AppProvider>
-          <AppShell dark={dark} onToggleDark={() => setDark(d => !d)} />
-        </AppProvider>
+        <AuthProvider>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            {/* Discord OAuth callback — Login handles the token param */}
+            <Route path="/auth/callback" element={<Login />} />
+
+            {/* Protected routes — everything behind auth */}
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <AppProvider>
+                    <AppShell dark={dark} onToggleDark={() => setDark(d => !d)} />
+                  </AppProvider>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>
   )

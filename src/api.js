@@ -1,14 +1,26 @@
+import { auth } from './firebase'
+
 const BASE = import.meta.env.VITE_API_URL || ''
 
 async function req(method, path, body) {
+  const headers = {}
+  if (body) headers['Content-Type'] = 'application/json'
+
+  // Attach Firebase auth token if the user is signed in
+  if (auth.currentUser) {
+    headers['Authorization'] = `Bearer ${await auth.currentUser.getIdToken()}`
+  }
+
   const res = await fetch(`${BASE}/api${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+export const getMe = () => req('GET', '/me')
 
 export const getProjects = () => req('GET', '/projects')
 export const createProject = (data) => req('POST', '/projects', data)
