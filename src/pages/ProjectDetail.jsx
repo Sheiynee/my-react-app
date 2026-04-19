@@ -8,6 +8,7 @@ import * as api from '../api'
 import { auth } from '../firebase'
 import { priorityBadge } from '../constants'
 import { canDo } from '../roles'
+import DOMPurify from 'dompurify'
 import {
   DndContext, DragOverlay, PointerSensor,
   useSensor, useSensors, useDroppable, useDraggable,
@@ -463,7 +464,7 @@ export default function ProjectDetail() {
               {t.description && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Description</p>
-                  <div className="text-sm text-gray-700 dark:text-zinc-300 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: t.description }} />
+                  <div className="text-sm text-gray-700 dark:text-zinc-300 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(t.description) }} />
                 </div>
               )}
 

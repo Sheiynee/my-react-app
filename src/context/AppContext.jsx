@@ -34,7 +34,7 @@ export function AppProvider({ children }) {
     if (!project) return null
     const { roles, createdBy } = project
     if (!roles || Object.keys(roles).length === 0) {
-      return createdBy === uid ? 'admin' : 'member'
+      return createdBy === uid ? 'admin' : null
     }
     return roles[uid] || null
   }
