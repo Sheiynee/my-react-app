@@ -32,6 +32,8 @@ export function AppProvider({ children }) {
   function getProjectRole(projectId) {
     const uid = auth.currentUser?.uid
     if (!uid) return null
+    // App admins have full access to every project
+    if (currentUser?.role === 'admin') return 'admin'
     const project = projects.find(p => p.id === projectId)
     if (!project) return null
     const { roles, createdBy } = project
