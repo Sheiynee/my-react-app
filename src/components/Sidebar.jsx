@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 
 const NAV = [
   {
@@ -40,7 +41,7 @@ const NAV = [
 ]
 
 export default function Sidebar({ dark, onToggleDark }) {
-  const { projects } = useApp()
+  const { projects, currentUser } = useApp()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
 
@@ -90,6 +91,32 @@ export default function Sidebar({ dark, onToggleDark }) {
             {!collapsed && <span>{n.label}</span>}
           </NavLink>
         ))}
+
+        {/* Admin: Users link */}
+        {currentUser?.role === 'admin' && (
+          <NavLink
+            to="/users"
+            title={collapsed ? 'Users' : undefined}
+            className={({ isActive }) =>
+              `flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm transition-colors whitespace-nowrap
+              ${collapsed ? 'justify-center' : ''}
+              ${isActive
+                ? 'bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 font-medium'
+                : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900/60 hover:text-gray-900 dark:hover:text-zinc-200'
+              }`
+            }
+          >
+            <span className="flex-shrink-0">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="4.5" r="2.5" fill="currentColor"/>
+                <path d="M3 13c0-2.761 2.239-4 5-4s5 1.239 5 4H3Z" fill="currentColor"/>
+                <circle cx="13" cy="5" r="1.5" fill="currentColor" opacity=".5"/>
+                <path d="M12 9.5c1.1 0 2 .4 2.5 1H16v1.5h-4.5A3.5 3.5 0 0 0 12 9.5Z" fill="currentColor" opacity=".5"/>
+              </svg>
+            </span>
+            {!collapsed && <span>Users</span>}
+          </NavLink>
+        )}
 
         {/* Projects section */}
         {!collapsed && projects.length > 0 && (

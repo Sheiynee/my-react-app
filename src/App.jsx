@@ -12,6 +12,7 @@ import ProjectDetail from './pages/ProjectDetail'
 import Notes from './pages/Notes'
 import Team from './pages/Team'
 import Profile from './pages/Profile'
+import Users from './pages/Users'
 import Login from './pages/Login'
 import './App.css'
 
@@ -57,6 +58,7 @@ function AppShell({ dark, onToggleDark }) {
             <Route path="/notes" element={<Notes />} />
             <Route path="/team" element={<Team />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/users" element={<Users />} />
           </Routes>
         </main>
       </div>

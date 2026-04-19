@@ -50,6 +50,7 @@ export const createComment = (data) => req('POST', '/comments', data)
 export const deleteComment = (id) => req('DELETE', `/comments/${id}`)
 
 export const getUsers = () => req('GET', '/users')
+export const updateUserRole = (uid, role) => req('PUT', `/users/${uid}/role`, { role })
 
 export const getProject = (id) => req('GET', `/projects/${id}`)
 export const getProjectMembers = (id) => req('GET', `/projects/${id}/members`)

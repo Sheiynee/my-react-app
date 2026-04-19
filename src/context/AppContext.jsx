@@ -5,6 +5,7 @@ import * as api from '../api'
 const AppContext = createContext(null)
 
 export function AppProvider({ children }) {
+  const [currentUser, setCurrentUser] = useState(null)
   const [projects, setProjects] = useState([])
   const [tasks, setTasks] = useState([])
   const [members, setMembers] = useState([])
@@ -13,8 +14,9 @@ export function AppProvider({ children }) {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    Promise.all([api.getProjects(), api.getTasks(), api.getMembers(), api.getNotes()])
-      .then(([p, t, m, n]) => {
+    Promise.all([api.getMe(), api.getProjects(), api.getTasks(), api.getMembers(), api.getNotes()])
+      .then(([me, p, t, m, n]) => {
+        setCurrentUser(me)
         setProjects(p)
         setTasks(t)
         setMembers(m)
@@ -124,6 +126,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
+      currentUser,
       projects, tasks, members, notes, loading, error,
       getProjectRole,
       addProject, editProject, removeProject, refreshProject,
