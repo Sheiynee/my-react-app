@@ -21,6 +21,7 @@ async function req(method, path, body) {
 }
 
 export const getMe = () => req('GET', '/me')
+export const updateMe = (data) => req('PUT', '/me', data)
 
 export const getProjects = () => req('GET', '/projects')
 export const createProject = (data) => req('POST', '/projects', data)

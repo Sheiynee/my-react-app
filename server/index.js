@@ -143,6 +143,19 @@ app.get('/api/me', requireAuth, async (req, res) => {
   res.json({ uid: req.user.uid, ...doc.data() })
 })
 
+app.put('/api/me', requireAuth, async (req, res) => {
+  const { displayName, bio, timezone, photoURL } = req.body
+  const update = {
+    ...(displayName && { displayName: displayName.trim() }),
+    ...(bio !== undefined && { bio }),
+    ...(timezone && { timezone }),
+    ...(photoURL !== undefined && { photoURL }),
+    updatedAt: new Date().toISOString(),
+  }
+  await db.collection('users').doc(req.user.uid).set(update, { merge: true })
+  res.json({ uid: req.user.uid, ...update })
+})
+
 // ── Projects ──────────────────────────────────────────────
 
 app.get('/api/projects', requireAuth, async (req, res) => {
