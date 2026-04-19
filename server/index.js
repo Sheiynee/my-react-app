@@ -12,6 +12,7 @@ const app = express()
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'https://joanna-bot.web.app',
+  'https://joanna-bot.firebaseapp.com',
   'https://taskflow-pm-lovat.vercel.app',
 ]
 
