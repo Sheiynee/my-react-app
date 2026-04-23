@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useApp } from '../context/AppContext'
+import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import RichTextEditor from '../components/RichTextEditor'
@@ -53,6 +53,85 @@ function DraggableCard({ task, children }) {
   )
 }
 
+/**
+ * Task card — hoisted to module scope so it has a stable identity across renders.
+ * Defining it inside ProjectDetail caused React to treat it as a new component on
+ * every render, resetting any local state (and triggering react-hooks/static-components).
+ * All state/handlers it needs are passed explicitly as props.
+ */
+function TaskCardContent({
+  task, col, columns, subs, assignees, isOverdue,
+  canManage, isCreator, onView, onMove, onDelete,
+}) {
+  const doneSubs = subs.filter(s => s.status === 'done').length
+  const colIdx = col ? columns.findIndex(c => c.key === col.key) : -1
+  return (
+    <div
+      className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden hover:border-blue-200 dark:hover:border-zinc-700 hover:shadow-md transition-all cursor-pointer flex group"
+      onClick={() => onView(task)}
+    >
+      <div className={`w-1 flex-shrink-0 priority-bar-${task.priority}`} />
+      <div className="flex-1 p-3">
+        <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 mb-2 leading-snug">{task.title}</p>
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${priorityBadge[task.priority]}`}>
+            {task.priority}
+          </span>
+          {subs.length > 0 && (
+            <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+              {doneSubs}/{subs.length}
+            </span>
+          )}
+          {task.links?.length > 0 && (
+            <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+              🔗 {task.links.length}
+            </span>
+          )}
+          {task.dueDate && (
+            <span className={`text-[11px] px-2 py-0.5 rounded-full ${isOverdue ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800'}`}>
+              {new Date(task.dueDate).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          {assignees.length > 0 && (
+            <div className="flex">
+              {assignees.slice(0, 3).map((a, i) => (
+                <span
+                  key={a.id}
+                  className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 flex items-center justify-center text-[9px] font-bold text-white"
+                  style={{ background: a.color, marginLeft: i > 0 ? -4 : 0 }}
+                  title={a.name}
+                >
+                  {a.name[0]?.toUpperCase()}
+                </span>
+              ))}
+              {assignees.length > 3 && (
+                <span className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-[9px] text-gray-500 dark:text-zinc-400" style={{ marginLeft: -4 }}>
+                  +{assignees.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+          {col && (
+            <div className="flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+              {colIdx > 0 && (
+                <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => onMove(task, columns[colIdx - 1].key)}>←</button>
+              )}
+              {colIdx < columns.length - 1 && (
+                <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => onMove(task, columns[colIdx + 1].key)}>→</button>
+              )}
+              {(canManage || isCreator) && (
+                <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs" onClick={() => onDelete(task.id)}>✕</button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -66,7 +145,6 @@ export default function ProjectDetail() {
   const canEdit = canDo(myRole, 'manager')
   const canDelete = canDo(myRole, 'admin')
   const canAddTask = canDo(myRole, 'member')
-  const canManageMembers = canDo(myRole, 'manager')
 
   const [taskModal, setTaskModal] = useState(null)
   const [taskForm, setTaskForm] = useState(EMPTY_TASK)
@@ -272,79 +350,23 @@ export default function ProjectDetail() {
   const done = projectTasks.filter(t => t.status === lastColKey || t.status === 'done').length
   const progress = projectTasks.length ? Math.round((done / projectTasks.length) * 100) : 0
 
-  function TaskCardContent({ task, col }) {
-    const assigneeIds = getAssigneeIds(task)
-    const assignees = assigneeIds.map(memberById).filter(Boolean)
+  // Build the prop bundle for the hoisted TaskCardContent component. Keeps the JSX
+  // call sites short and ensures both the kanban cell and the drag overlay stay in sync.
+  function taskCardProps(task, col) {
+    const assignees = getAssigneeIds(task).map(memberById).filter(Boolean)
     const subs = subtasksOf(task.id)
-    const doneSubs = subs.filter(s => s.status === 'done').length
-    const isOverdue = task.dueDate && task.status !== lastColKey && task.status !== 'done' && new Date(task.dueDate) < new Date()
-    const colIdx = col ? columns.findIndex(c => c.key === col.key) : -1
-
-    return (
-      <div
-        className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden hover:border-blue-200 dark:hover:border-zinc-700 hover:shadow-md transition-all cursor-pointer flex group"
-        onClick={() => openViewTask(task)}
-      >
-        <div className={`w-1 flex-shrink-0 priority-bar-${task.priority}`} />
-        <div className="flex-1 p-3">
-          <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 mb-2 leading-snug">{task.title}</p>
-          <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${priorityBadge[task.priority]}`}>
-              {task.priority}
-            </span>
-            {subs.length > 0 && (
-              <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                {doneSubs}/{subs.length}
-              </span>
-            )}
-            {task.links?.length > 0 && (
-              <span className="text-[11px] text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                🔗 {task.links.length}
-              </span>
-            )}
-            {task.dueDate && (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full ${isOverdue ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800'}`}>
-                {new Date(task.dueDate).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center justify-between">
-            {assignees.length > 0 && (
-              <div className="flex">
-                {assignees.slice(0, 3).map((a, i) => (
-                  <span
-                    key={a.id}
-                    className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 flex items-center justify-center text-[9px] font-bold text-white"
-                    style={{ background: a.color, marginLeft: i > 0 ? -4 : 0 }}
-                    title={a.name}
-                  >
-                    {a.name[0]?.toUpperCase()}
-                  </span>
-                ))}
-                {assignees.length > 3 && (
-                  <span className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-[9px] text-gray-500 dark:text-zinc-400" style={{ marginLeft: -4 }}>
-                    +{assignees.length - 3}
-                  </span>
-                )}
-              </div>
-            )}
-            {col && (
-              <div className="flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
-                {colIdx > 0 && (
-                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => moveTask(task, columns[colIdx - 1].key)}>←</button>
-                )}
-                {colIdx < columns.length - 1 && (
-                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 transition-colors text-xs" onClick={() => moveTask(task, columns[colIdx + 1].key)}>→</button>
-                )}
-                {(canDo(myRole, 'manager') || task.createdBy === currentUid) && (
-                  <button className="w-5 h-5 flex items-center justify-center rounded-md text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs" onClick={() => handleDeleteTask(task.id)}>✕</button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
+    const isOverdue = !!task.dueDate
+      && task.status !== lastColKey
+      && task.status !== 'done'
+      && new Date(task.dueDate) < new Date()
+    return {
+      task, col, columns, subs, assignees, isOverdue,
+      canManage: canDo(myRole, 'manager'),
+      isCreator: task.createdBy === currentUid,
+      onView: openViewTask,
+      onMove: moveTask,
+      onDelete: handleDeleteTask,
+    }
   }
 
   return (
@@ -405,7 +427,7 @@ export default function ProjectDetail() {
                 <DroppableColumn id={col.key}>
                   {colTasks.map(task => (
                     <DraggableCard key={task.id} task={task}>
-                      <TaskCardContent task={task} col={col} />
+                      <TaskCardContent {...taskCardProps(task, col)} />
                     </DraggableCard>
                   ))}
                 </DroppableColumn>
@@ -417,7 +439,7 @@ export default function ProjectDetail() {
         <DragOverlay>
           {activeTask && (
             <div style={{ transform: 'rotate(2deg)', pointerEvents: 'none', opacity: 0.9 }}>
-              <TaskCardContent task={activeTask} col={null} />
+              <TaskCardContent {...taskCardProps(activeTask, null)} />
             </div>
           )}
         </DragOverlay>

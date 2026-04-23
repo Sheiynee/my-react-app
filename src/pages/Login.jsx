@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/auth-context'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -21,14 +21,18 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  // Handle Discord OAuth callback token
-  useEffect(() => {
-    const oauthError = searchParams.get('error')
-    if (oauthError) setError('Discord sign-in failed. Please try again.')
-  }, [searchParams])
+  // Derive the initial error banner from URL params (OAuth redirect failures) using
+  // the state initializer instead of a useEffect → avoids react-hooks/set-state-in-effect
+  // and the pointless extra render that the old effect caused.
+  const [error, setError] = useState(() => {
+    const err = searchParams.get('error')
+    if (err === 'email_unverified') return 'Discord email must be verified.'
+    if (err) return 'Discord sign-in failed. Please try again.'
+    return ''
+  })
+  // The token-exchange effect below drives its own loading state — initialize from URL
+  // so we never flash the login form before the spinner.
+  const [loading, setLoading] = useState(() => !!searchParams.get('code'))
 
   // Redirect already-logged-in users
   useEffect(() => {
@@ -39,16 +43,16 @@ export default function Login() {
   // We POST the code to /auth/exchange to receive the custom token over HTTPS JSON,
   // keeping the token out of browser history, Referer headers, and server logs.
   useEffect(() => {
-    const code = searchParams.get('code')
-    // Back-compat: if an old client still sends ?token=, reject it to force re-auth.
+    // Back-compat: if an old client still sends ?token=, reject it and strip from URL.
     if (searchParams.get('token')) {
-      setError('Session expired. Please sign in again.')
-      // Strip the token from the URL history entry.
       window.history.replaceState({}, '', '/login')
+      // Fire-and-forget state sync — user just gets the error banner on next render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing external (URL) → internal state
+      setError('Session expired. Please sign in again.')
       return
     }
+    const code = searchParams.get('code')
     if (!code) return
-    setLoading(true)
     // Remove the code from the URL immediately so it can't be replayed on refresh.
     window.history.replaceState({}, '', '/login')
     fetch(`${BASE}/auth/exchange`, {

@@ -5,7 +5,14 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(node --input-type=module)"
+      "Bash(node --input-type=module)",
+      "Bash(ls -la .env*)",
+      "Bash(cat .env)",
+      "Bash(grep -E \"\\\\.js$|\\\\.ts$\")",
+      "Bash(npm run *)",
+      "Bash(node --check index.js)",
+      "Bash(node --check bot.js)",
+      "Bash(node --check db.js)"
     ]
   }
 }

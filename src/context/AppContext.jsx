@@ -1,8 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { auth } from '../firebase'
 import * as api from '../api'
-
-const AppContext = createContext(null)
+import { AppContext } from './app-context'
 
 export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
@@ -170,4 +169,3 @@ export function AppProvider({ children }) {
   )
 }
 
-export const useApp = () => useContext(AppContext)

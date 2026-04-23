@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { AppProvider, useApp } from './context/AppContext'
+import { AppProvider } from './context/AppContext'
+import { useApp } from './context/app-context'
 import { AuthProvider } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import UserMenu from './components/UserMenu'

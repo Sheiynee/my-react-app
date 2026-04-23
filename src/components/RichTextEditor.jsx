@@ -29,7 +29,8 @@ export default function RichTextEditor({ content, onChange }) {
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   })
 
-  useEffect(() => () => editor?.destroy(), [])
+  // Include `editor` so the cleanup closes over the current editor instance.
+  useEffect(() => () => editor?.destroy(), [editor])
 
   if (!editor) return null
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useApp } from '../context/AppContext'
+import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
 import { canDo } from '../roles'
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useApp } from '../context/AppContext'
+import { useApp } from '../context/app-context'
 import * as api from '../api'
 
 const APP_ROLES = ['admin', 'manager', 'employee']

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useApp } from '../context/AppContext'
+import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
 
 const COLORS = ['#2563eb', '#16a34a', '#d97706', '#ea580c', '#7c3aed', '#dc2626', '#0891b2', '#db2777']

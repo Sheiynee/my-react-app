@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useApp } from '../context/AppContext'
+import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
 import { stripHtml } from '../constants'
 import { canDo } from '../roles'
