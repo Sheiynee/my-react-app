@@ -3,6 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import crypto from 'crypto'
+import sanitizeHtml from 'sanitize-html'
 import 'dotenv/config'
 import { v4 as uuid } from 'uuid'
 import admin from 'firebase-admin'
@@ -65,6 +66,33 @@ app.use('/auth', authLimiter)
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
 
 function bad(res, msg) { return res.status(400).json({ error: msg }) }
+
+// Server-side HTML sanitization for rich-text fields (task description, note content).
+// Defence in depth: DOMPurify already runs in the browser, but any non-browser consumer
+// (Discord bot, future mobile client, direct API call) would otherwise render raw HTML.
+// Allow only the tags Tiptap StarterKit produces. Strips <script>, on* handlers, javascript: URIs.
+const SAFE_HTML_OPTIONS = {
+  allowedTags: [
+    'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre', 'blockquote',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li',
+    'a', 'hr',
+  ],
+  allowedAttributes: {
+    a: ['href', 'target', 'rel'],
+  },
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesAppliedToAttributes: ['href'],
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' }),
+  },
+  // Drop content of disallowed tags entirely (don't surface their text).
+  nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript'],
+}
+function cleanRichText(html) {
+  if (typeof html !== 'string') return ''
+  return sanitizeHtml(html, SAFE_HTML_OPTIONS)
+}
 
 // ── Auth middleware ────────────────────────────────────────
 
@@ -477,7 +505,7 @@ const VALID_STATUSES = new Set(['todo', 'in_progress', 'done'])
 function pickTaskFields(body) {
   const out = {}
   if (typeof body.title === 'string') out.title = body.title.trim().slice(0, 300)
-  if (typeof body.description === 'string') out.description = body.description.slice(0, 20000)
+  if (typeof body.description === 'string') out.description = cleanRichText(body.description.slice(0, 20000))
   if (typeof body.status === 'string' && VALID_STATUSES.has(body.status)) out.status = body.status
   if (typeof body.priority === 'string' && VALID_PRIORITIES.has(body.priority)) out.priority = body.priority
   if (body.parentId === null || typeof body.parentId === 'string') out.parentId = body.parentId
@@ -649,7 +677,7 @@ app.get('/api/notes', requireAuth, async (req, res) => {
 function pickNoteFields(body) {
   const out = {}
   if (typeof body.title === 'string') out.title = body.title.trim().slice(0, 300)
-  if (typeof body.content === 'string') out.content = body.content.slice(0, 50000)
+  if (typeof body.content === 'string') out.content = cleanRichText(body.content.slice(0, 50000))
   return out
 }
 
@@ -743,9 +771,12 @@ app.post('/api/comments', requireAuth, async (req, res) => {
   const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
   if (!hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
   const id = uuid()
+  // Comments are plain text — strip ALL HTML (no allowed tags). Enforces 2KB cap.
+  const cleanContent = sanitizeHtml(content, { allowedTags: [], allowedAttributes: {} }).trim().slice(0, 2000)
+  if (!cleanContent) return bad(res, 'content is required')
   const comment = {
     taskId,
-    content: content.trim(),
+    content: cleanContent,
     authorName: req.user.name || req.user.email || 'Unknown',
     authorUid: req.user.uid,
     createdAt: new Date().toISOString(),
