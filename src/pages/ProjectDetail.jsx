@@ -85,11 +85,17 @@ export default function ProjectDetail() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   useEffect(() => {
-    if (taskModal?.mode === 'edit' && taskModal.id) {
-      api.getComments(taskModal.id).then(setComments).catch(console.error)
-    } else {
+    if (taskModal?.mode !== 'edit' || !taskModal.id) {
       setComments([])
+      return
     }
+    // Abort the in-flight fetch if the user switches tasks or closes the modal,
+    // so stale results from a previous task can't overwrite the current comments.
+    const ctrl = new AbortController()
+    api.getComments(taskModal.id, { signal: ctrl.signal })
+      .then(setComments)
+      .catch((err) => { if (!err?.aborted) console.error(err) })
+    return () => ctrl.abort()
   }, [taskModal?.id, taskModal?.mode])
 
   if (!project) return (

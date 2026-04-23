@@ -96,15 +96,34 @@ function cleanRichText(html) {
 
 // ── Auth middleware ────────────────────────────────────────
 
+// Tiny in-memory TTL cache for the user's app-level role. Saves a Firestore
+// read on every request. 60s TTL — stale role at worst survives one minute.
+// `invalidateAppRole(uid)` is called whenever we mutate a user's role.
+const APP_ROLE_TTL_MS = 60 * 1000
+const APP_ROLE_CACHE_MAX = 5000
+const appRoleCache = new Map() // uid -> { role, expiresAt }
+
+function invalidateAppRole(uid) {
+  appRoleCache.delete(uid)
+}
+
+async function getAppRole(uid) {
+  const cached = appRoleCache.get(uid)
+  if (cached && cached.expiresAt > Date.now()) return cached.role
+  const userDoc = await db.collection('users').doc(uid).get()
+  const role = userDoc.exists ? (userDoc.data().role || 'employee') : 'employee'
+  if (appRoleCache.size >= APP_ROLE_CACHE_MAX) appRoleCache.clear()
+  appRoleCache.set(uid, { role, expiresAt: Date.now() + APP_ROLE_TTL_MS })
+  return role
+}
+
 async function requireAuth(req, res, next) {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
   try {
     const token = header.slice(7)
     req.user = await admin.auth().verifyIdToken(token)
-    // Attach app-level role so handlers don't need extra Firestore reads
-    const userDoc = await db.collection('users').doc(req.user.uid).get()
-    req.user.appRole = userDoc.exists ? (userDoc.data().role || 'employee') : 'employee'
+    req.user.appRole = await getAppRole(req.user.uid)
     next()
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' })
@@ -324,6 +343,7 @@ app.put('/api/users/:uid/role', requireAuth, async (req, res) => {
   const userDoc = await db.collection('users').doc(req.params.uid).get()
   if (!userDoc.exists) return res.status(404).json({ error: 'User not found' })
   await db.collection('users').doc(req.params.uid).update({ role })
+  invalidateAppRole(req.params.uid)
   res.json({ uid: req.params.uid, role })
 })
 
@@ -566,7 +586,8 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
 })
 
 app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
-  const taskDoc = await db.collection('tasks').doc(req.params.id).get()
+  const taskRef = db.collection('tasks').doc(req.params.id)
+  const taskDoc = await taskRef.get()
   if (!taskDoc.exists) return res.status(404).json({ error: 'Not found' })
   const task = taskDoc.data()
   const projectDoc = await db.collection('projects').doc(task.projectId).get()
@@ -574,12 +595,14 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   if (!isAppAdmin(req) && !hasRole(projectRole, 'manager') && task.createdBy !== req.user.uid) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  await db.collection('tasks').doc(req.params.id).delete()
+  // Atomic delete: fetch children first, then delete task + subtasks + comments
+  // in a single batch so a partial failure can't leave orphan rows.
   const [subSnap, commentSnap] = await Promise.all([
     db.collection('tasks').where('parentId', '==', req.params.id).get(),
     db.collection('comments').where('taskId', '==', req.params.id).get(),
   ])
   const batch = db.batch()
+  batch.delete(taskRef)
   subSnap.docs.forEach(d => batch.delete(d.ref))
   commentSnap.docs.forEach(d => batch.delete(d.ref))
   await batch.commit()
