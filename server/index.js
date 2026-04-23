@@ -1,5 +1,8 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import crypto from 'crypto'
 import 'dotenv/config'
 import { v4 as uuid } from 'uuid'
 import admin from 'firebase-admin'
@@ -9,23 +12,55 @@ import { db } from './db.js'
 const { FieldValue } = admin.firestore
 
 const app = express()
-const ALLOWED_ORIGINS = [
+app.set('trust proxy', 1)
+
+// Allowed origins: explicit list + optional comma-separated env var for prod/preview domains.
+// No wildcard regexes — every origin must be explicitly allow-listed.
+const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'https://joanna-bot.web.app',
   'https://joanna-bot.firebaseapp.com',
   'https://taskflow-pm-lovat.vercel.app',
-]
+  ...(process.env.EXTRA_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+])
+
+app.use(helmet({
+  // Custom token is delivered via POST JSON now, so no need to relax CSP for redirects.
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true)
-    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
-    if (/^https:\/\/taskflow-.*\.vercel\.app$/.test(origin)) return cb(null, true)
-    if (/^https:\/\/.*-sheiynees-projects\.vercel\.app$/.test(origin)) return cb(null, true)
+    // Reject requests with no Origin header for API routes (blocks curl / SSRF using cookies).
+    // Same-origin browser requests don't need CORS anyway.
+    if (!origin) return cb(null, false)
+    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true)
     cb(new Error(`CORS: ${origin} not allowed`))
   },
+  credentials: false,
 }))
-app.use(express.json())
+
+// Tight body limit — no legitimate endpoint needs > 100kb.
+app.use(express.json({ limit: '100kb' }))
+
+// Global rate limiter for all /api/* and /auth/* traffic.
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+})
+// Stricter limiter for OAuth endpoints to block brute force / enumeration.
+const authLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth requests' },
+})
+app.use('/api', globalLimiter)
+app.use('/auth', authLimiter)
 
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
 
@@ -80,19 +115,40 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
+// CSRF state store for OAuth: maps state -> { expiresAt }. 10-min TTL, single-use.
+const oauthStates = new Map()
+// One-time code store for token exchange: maps code -> { uid, expiresAt }. 60s TTL, single-use.
+const oauthCodes = new Map()
+
+function purgeExpired(map) {
+  const now = Date.now()
+  for (const [k, v] of map) if (v.expiresAt < now) map.delete(k)
+}
+setInterval(() => { purgeExpired(oauthStates); purgeExpired(oauthCodes) }, 60 * 1000).unref()
+
 app.get('/auth/discord', (req, res) => {
+  const state = crypto.randomBytes(24).toString('hex')
+  oauthStates.set(state, { expiresAt: Date.now() + 10 * 60 * 1000 })
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
     response_type: 'code',
     scope: 'identify email',
+    state,
   })
   res.redirect(`https://discord.com/api/oauth2/authorize?${params}`)
 })
 
 app.get('/auth/discord/callback', async (req, res) => {
-  const { code } = req.query
-  if (!code) return res.status(400).send('Missing code')
+  const { code, state } = req.query
+  if (!code || !state) return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`)
+
+  // Verify + consume CSRF state (single-use).
+  const entry = oauthStates.get(state)
+  oauthStates.delete(state)
+  if (!entry || entry.expiresAt < Date.now()) {
+    return res.redirect(`${FRONTEND_URL}/login?error=oauth_state`)
+  }
 
   try {
     // Exchange code for Discord access token
@@ -115,6 +171,11 @@ app.get('/auth/discord/callback', async (req, res) => {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     })
     const discordUser = await userRes.json()
+
+    // Require a verified email so unverified addresses can't squat real accounts.
+    if (discordUser.email && discordUser.verified !== true) {
+      return res.redirect(`${FRONTEND_URL}/login?error=email_unverified`)
+    }
 
     const uid = `discord_${discordUser.id}`
     const avatarUrl = discordUser.avatar
@@ -154,13 +215,28 @@ app.get('/auth/discord/callback', async (req, res) => {
       updatedAt: new Date().toISOString(),
     }, { merge: true })
 
-    // Mint a Firebase custom token and redirect to frontend
-    const customToken = await admin.auth().createCustomToken(uid)
-    res.redirect(`${FRONTEND_URL}/auth/callback?token=${customToken}`)
+    // Issue a one-time code. Frontend POSTs it to /auth/exchange to get a custom token.
+    // This keeps the token out of URLs / browser history / Referer headers / server logs.
+    const oneTimeCode = crypto.randomBytes(32).toString('hex')
+    oauthCodes.set(oneTimeCode, { uid, expiresAt: Date.now() + 60 * 1000 })
+    res.redirect(`${FRONTEND_URL}/auth/callback?code=${oneTimeCode}`)
   } catch (err) {
     console.error('Discord OAuth error:', err)
     res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`)
   }
+})
+
+// Exchange one-time code for a Firebase custom token (single-use, 60s TTL).
+app.post('/auth/exchange', async (req, res) => {
+  const { code } = req.body || {}
+  if (!code || typeof code !== 'string') return bad(res, 'code is required')
+  const entry = oauthCodes.get(code)
+  oauthCodes.delete(code)
+  if (!entry || entry.expiresAt < Date.now()) {
+    return res.status(400).json({ error: 'Invalid or expired code' })
+  }
+  const customToken = await admin.auth().createCustomToken(entry.uid)
+  res.json({ token: customToken })
 })
 
 // ── Current user endpoint ──────────────────────────────────
@@ -171,13 +247,27 @@ app.get('/api/me', requireAuth, async (req, res) => {
   res.json({ uid: req.user.uid, ...doc.data() })
 })
 
+// Only allow safe URL schemes for images — blocks javascript:, data:, etc.
+function isSafeHttpUrl(value) {
+  if (typeof value !== 'string') return false
+  try {
+    const u = new URL(value)
+    return u.protocol === 'https:' || u.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
 app.put('/api/me', requireAuth, async (req, res) => {
   const { displayName, bio, timezone, photoURL } = req.body
+  if (photoURL !== undefined && photoURL !== null && photoURL !== '' && !isSafeHttpUrl(photoURL)) {
+    return bad(res, 'photoURL must be a valid http(s) URL')
+  }
   const update = {
-    ...(displayName && { displayName: displayName.trim() }),
-    ...(bio !== undefined && { bio }),
-    ...(timezone && { timezone }),
-    ...(photoURL !== undefined && { photoURL }),
+    ...(typeof displayName === 'string' && displayName.trim() && { displayName: displayName.trim().slice(0, 100) }),
+    ...(typeof bio === 'string' && { bio: bio.slice(0, 500) }),
+    ...(typeof timezone === 'string' && { timezone: timezone.slice(0, 64) }),
+    ...(photoURL !== undefined && { photoURL: photoURL || null }),
     updatedAt: new Date().toISOString(),
   }
   await db.collection('users').doc(req.user.uid).set(update, { merge: true })
@@ -225,16 +315,25 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
   res.json({ id: doc.id, ...doc.data() })
 })
 
+// Allow-listed fields for project create/update. Never spread raw req.body.
+function pickProjectFields(body) {
+  const out = {}
+  if (typeof body.name === 'string') out.name = body.name.trim().slice(0, 200)
+  if (typeof body.description === 'string') out.description = body.description.slice(0, 2000)
+  if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) out.color = body.color
+  if (Array.isArray(body.memberIds)) out.memberIds = body.memberIds.filter(x => typeof x === 'string').slice(0, 200)
+  return out
+}
+
 app.post('/api/projects', requireAuth, async (req, res) => {
-  const { name } = req.body
-  if (!name || typeof name !== 'string' || !name.trim()) return bad(res, 'name is required')
+  const picked = pickProjectFields(req.body || {})
+  if (!picked.name) return bad(res, 'name is required')
   const id = uuid()
   const project = {
     description: '',
     color: '#388bfd',
     memberIds: [],
-    ...req.body,
-    name: name.trim(),
+    ...picked,
     roles: { [req.user.uid]: 'admin' },
     createdAt: new Date().toISOString(),
     createdBy: req.user.uid,
@@ -250,8 +349,9 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
   const role = getUserProjectRole(req.user.uid, doc.data())
   if (!isAppAdmin(req) && !hasRole(role, 'manager')) return res.status(403).json({ error: 'Forbidden' })
-  // Protect the roles map from being overwritten via this endpoint
-  const { roles: _roles, ...safeBody } = req.body
+  // Allow-list fields — never trust raw req.body (mass-assignment prevention).
+  const safeBody = pickProjectFields(req.body || {})
+  if (Object.keys(safeBody).length === 0) return bad(res, 'No valid fields to update')
   await ref.update(safeBody)
   res.json({ id: req.params.id, ...doc.data(), ...safeBody })
 })
@@ -371,18 +471,34 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
   res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => accessibleIds.has(t.projectId)))
 })
 
+const VALID_STATUSES = new Set(['todo', 'in_progress', 'done'])
+
+// Allow-listed fields for task create/update.
+function pickTaskFields(body) {
+  const out = {}
+  if (typeof body.title === 'string') out.title = body.title.trim().slice(0, 300)
+  if (typeof body.description === 'string') out.description = body.description.slice(0, 20000)
+  if (typeof body.status === 'string' && VALID_STATUSES.has(body.status)) out.status = body.status
+  if (typeof body.priority === 'string' && VALID_PRIORITIES.has(body.priority)) out.priority = body.priority
+  if (body.parentId === null || typeof body.parentId === 'string') out.parentId = body.parentId
+  if (body.assigneeId === null || typeof body.assigneeId === 'string') out.assigneeId = body.assigneeId
+  if (Array.isArray(body.assigneeIds)) out.assigneeIds = body.assigneeIds.filter(x => typeof x === 'string').slice(0, 50)
+  if (body.dueDate === null || typeof body.dueDate === 'string') out.dueDate = body.dueDate
+  return out
+}
+
 app.post('/api/tasks', requireAuth, async (req, res) => {
-  const { title, projectId, priority } = req.body
-  if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
+  const { projectId } = req.body || {}
   if (!projectId || typeof projectId !== 'string') return bad(res, 'projectId is required')
-  if (priority && !VALID_PRIORITIES.has(priority)) return bad(res, `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`)
+  const picked = pickTaskFields(req.body || {})
+  if (!picked.title) return bad(res, 'title is required')
   const projectDoc = await db.collection('projects').doc(projectId).get()
   if (!projectDoc.exists) return res.status(404).json({ error: 'Project not found' })
   const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
   if (!isAppAdmin(req) && !hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
   const id = uuid()
   const task = {
-    projectId: null,
+    projectId,
     parentId: null,
     description: '',
     status: 'todo',
@@ -390,8 +506,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
     assigneeId: null,
     dueDate: null,
     completedAt: null,
-    ...req.body,
-    title: title.trim(),
+    ...picked,
     createdAt: new Date().toISOString(),
     createdBy: req.user.uid,
     createdByName: req.user.name || req.user.email || 'Unknown',
@@ -401,8 +516,6 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
 })
 
 app.put('/api/tasks/:id', requireAuth, async (req, res) => {
-  const { priority } = req.body
-  if (priority && !VALID_PRIORITIES.has(priority)) return bad(res, `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`)
   const ref = db.collection('tasks').doc(req.params.id)
   const doc = await ref.get()
   if (!doc.exists) return res.status(404).json({ error: 'Not found' })
@@ -412,11 +525,12 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   if (!isAppAdmin(req) && !hasRole(projectRole, 'member') && task.createdBy !== req.user.uid) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  const { createdBy: _cb, createdAt: _ca, createdByName: _cbn, projectId: _pid, ...safeBody } = req.body
+  const safeBody = pickTaskFields(req.body || {})
+  if (Object.keys(safeBody).length === 0) return bad(res, 'No valid fields to update')
   const updated = { ...task, ...safeBody }
-  if (req.body.status === 'done' && !task.completedAt) {
+  if (safeBody.status === 'done' && !task.completedAt) {
     updated.completedAt = new Date().toISOString()
-  } else if (req.body.status && req.body.status !== 'done') {
+  } else if (safeBody.status && safeBody.status !== 'done') {
     updated.completedAt = null
   }
   await ref.update(updated)
@@ -451,16 +565,25 @@ app.get('/api/members', requireAuth, async (req, res) => {
   res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
 })
 
+// Allow-listed fields for member create/update.
+function pickMemberFields(body) {
+  const out = {}
+  if (typeof body.name === 'string') out.name = body.name.trim().slice(0, 200)
+  if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) out.color = body.color
+  if (typeof body.role === 'string') out.role = body.role.slice(0, 100)
+  if (typeof body.discordId === 'string') out.discordId = body.discordId.slice(0, 64)
+  return out
+}
+
 app.post('/api/members', requireAuth, async (req, res) => {
-  const { name } = req.body
-  if (!name || typeof name !== 'string' || !name.trim()) return bad(res, 'name is required')
+  const picked = pickMemberFields(req.body || {})
+  if (!picked.name) return bad(res, 'name is required')
   const id = uuid()
   const member = {
     color: '#388bfd',
     role: '',
     discordId: '',
-    ...req.body,
-    name: name.trim(),
+    ...picked,
     createdAt: new Date().toISOString(),
     createdBy: req.user.uid,
     createdByName: req.user.name || req.user.email || 'Unknown',
@@ -476,8 +599,10 @@ app.put('/api/members/:id', requireAuth, async (req, res) => {
   if (doc.data().createdBy !== req.user.uid && !isAppAdmin(req)) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  await ref.update(req.body)
-  res.json({ id: req.params.id, ...doc.data(), ...req.body })
+  const safeBody = pickMemberFields(req.body || {})
+  if (Object.keys(safeBody).length === 0) return bad(res, 'No valid fields to update')
+  await ref.update(safeBody)
+  res.json({ id: req.params.id, ...doc.data(), ...safeBody })
 })
 
 app.delete('/api/members/:id', requireAuth, async (req, res) => {
@@ -520,21 +645,29 @@ app.get('/api/notes', requireAuth, async (req, res) => {
   )
 })
 
+// Allow-listed fields for notes create/update.
+function pickNoteFields(body) {
+  const out = {}
+  if (typeof body.title === 'string') out.title = body.title.trim().slice(0, 300)
+  if (typeof body.content === 'string') out.content = body.content.slice(0, 50000)
+  return out
+}
+
 app.post('/api/notes', requireAuth, async (req, res) => {
-  const { title } = req.body
-  if (!title || typeof title !== 'string' || !title.trim()) return bad(res, 'title is required')
-  if (req.body.projectId) {
-    const projectDoc = await db.collection('projects').doc(req.body.projectId).get()
+  const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId : null
+  const picked = pickNoteFields(req.body || {})
+  if (!picked.title) return bad(res, 'title is required')
+  if (projectId) {
+    const projectDoc = await db.collection('projects').doc(projectId).get()
     if (!projectDoc.exists) return res.status(404).json({ error: 'Project not found' })
     const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
     if (!isAppAdmin(req) && !hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
   }
   const id = uuid()
   const note = {
-    projectId: null,
+    projectId,
     content: '',
-    ...req.body,
-    title: title.trim(),
+    ...picked,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     createdBy: req.user.uid,
@@ -558,7 +691,8 @@ app.put('/api/notes/:id', requireAuth, async (req, res) => {
       }
     }
   }
-  const { createdBy: _cb, createdAt: _ca, createdByName: _cbn, projectId: _pid, ...safeNoteBody } = req.body
+  const safeNoteBody = pickNoteFields(req.body || {})
+  if (Object.keys(safeNoteBody).length === 0) return bad(res, 'No valid fields to update')
   const updated = { ...note, ...safeNoteBody, updatedAt: new Date().toISOString() }
   await ref.update(updated)
   res.json({ id: req.params.id, ...updated })
@@ -584,9 +718,16 @@ app.delete('/api/notes/:id', requireAuth, async (req, res) => {
 // ── Comments ───────────────────────────────────────────────
 
 app.get('/api/comments', requireAuth, async (req, res) => {
-  let query = db.collection('comments')
-  if (req.query.taskId) query = query.where('taskId', '==', req.query.taskId)
-  const snap = await query.get()
+  // IDOR fix: require taskId, then verify caller has access to the parent project.
+  const { taskId } = req.query
+  if (!taskId || typeof taskId !== 'string') return bad(res, 'taskId query param is required')
+  const taskDoc = await db.collection('tasks').doc(taskId).get()
+  if (!taskDoc.exists) return res.status(404).json({ error: 'Task not found' })
+  const task = taskDoc.data()
+  const projectDoc = await db.collection('projects').doc(task.projectId).get()
+  const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
+  if (!isAppAdmin(req) && !projectRole) return res.status(403).json({ error: 'Forbidden' })
+  const snap = await db.collection('comments').where('taskId', '==', taskId).get()
   const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
   res.json(comments)
@@ -626,6 +767,14 @@ app.delete('/api/comments/:id', requireAuth, async (req, res) => {
   }
   await db.collection('comments').doc(req.params.id).delete()
   res.json({ ok: true })
+})
+
+// Generic error handler — don't leak stack traces / internals to clients.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err)
+  if (res.headersSent) return
+  res.status(500).json({ error: 'Internal server error' })
 })
 
 const PORT = process.env.PORT || 3001

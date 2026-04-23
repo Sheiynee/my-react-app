@@ -11,6 +11,32 @@ client.once('ready', () => {
 
 client.on('error', (err) => console.error('Discord client error:', err))
 
+// Role helpers mirrored from server/index.js so the bot enforces the same auth model.
+const ROLE_RANK = { viewer: 0, member: 1, manager: 2, admin: 3 }
+function hasRole(userRole, minRole) {
+  return (ROLE_RANK[userRole] ?? -1) >= ROLE_RANK[minRole]
+}
+function getUserProjectRole(uid, projectData) {
+  const { roles, createdBy } = projectData
+  if (!roles || Object.keys(roles).length === 0) return createdBy === uid ? 'admin' : null
+  return roles[uid] || null
+}
+
+// Resolve the Discord interaction user to a linked Firebase user. Returns null if
+// that Discord account hasn't logged into the web app yet — bot then refuses to write.
+async function resolveInteractionUser(interaction) {
+  const discordId = interaction.user.id
+  const uid = `discord_${discordId}`
+  const userDoc = await db.collection('users').doc(uid).get()
+  if (!userDoc.exists) return null
+  const data = userDoc.data()
+  return {
+    uid,
+    appRole: data.role || 'employee',
+    displayName: data.displayName || interaction.user.username,
+  }
+}
+
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return
 
@@ -20,6 +46,17 @@ client.on('interactionCreate', async (interaction) => {
   await interaction.deferReply()
 
   try {
+    // Every bot command requires the invoking Discord user to be linked to a Firebase
+    // account (by logging in to the web app at least once). This ensures every write
+    // has a real createdBy / roles entry and can be audited back to a user.
+    const actor = await resolveInteractionUser(interaction)
+    if (!actor) {
+      return interaction.editReply({
+        content: '🔒 Please sign in to the web app with Discord at least once before using the bot.',
+        ephemeral: true,
+      })
+    }
+    const isAppAdmin = actor.appRole === 'admin'
     // ── /project ──────────────────────────────────────────
 
     if (commandName === 'project') {
@@ -28,11 +65,13 @@ client.on('interactionCreate', async (interaction) => {
           db.collection('projects').get(),
           db.collection('tasks').get(),
         ])
-        const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        let projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        // Scope the list to projects this user can actually access.
+        if (!isAppAdmin) projects = projects.filter(p => getUserProjectRole(actor.uid, p) !== null)
         const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
         if (!projects.length) {
-          return interaction.editReply({ content: '📂 No projects yet. Create one on the web app or with `/project create`.', ephemeral: true })
+          return interaction.editReply({ content: '📂 No projects you can access. Create one with `/project create`.', ephemeral: true })
         }
         const embed = new EmbedBuilder()
           .setTitle('📂 Projects')
@@ -55,7 +94,11 @@ client.on('interactionCreate', async (interaction) => {
           description,
           color: colors[Math.floor(Math.random() * colors.length)],
           memberIds: [],
+          // Proper ownership + role assignment so the project isn't an orphan.
+          roles: { [actor.uid]: 'admin' },
           createdAt: new Date().toISOString(),
+          createdBy: actor.uid,
+          createdByName: actor.displayName,
         }
         await db.collection('projects').doc(id).set(project)
         return interaction.editReply(`✅ Project **${name}** created! Open the web app to manage it.`)
@@ -71,6 +114,9 @@ client.on('interactionCreate', async (interaction) => {
         const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         const project = projects.find(p => p.name.toLowerCase().includes(projectName.toLowerCase()))
         if (!project) return interaction.editReply({ content: `❌ Project "${projectName}" not found.`, ephemeral: true })
+        if (!isAppAdmin && !getUserProjectRole(actor.uid, project)) {
+          return interaction.editReply({ content: '🔒 You do not have access to that project.', ephemeral: true })
+        }
 
         const tasksSnap = await db.collection('tasks').where('projectId', '==', project.id).get()
         const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => !t.parentId)
@@ -101,6 +147,10 @@ client.on('interactionCreate', async (interaction) => {
         const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         const project = projects.find(p => p.name.toLowerCase().includes(projectName.toLowerCase()))
         if (!project) return interaction.editReply({ content: `❌ Project "${projectName}" not found.`, ephemeral: true })
+        const role = getUserProjectRole(actor.uid, project)
+        if (!isAppAdmin && !hasRole(role, 'member')) {
+          return interaction.editReply({ content: '🔒 You do not have permission to add tasks to that project.', ephemeral: true })
+        }
 
         const id = uuid()
         const task = {
@@ -114,16 +164,29 @@ client.on('interactionCreate', async (interaction) => {
           dueDate: null,
           completedAt: null,
           createdAt: new Date().toISOString(),
+          createdBy: actor.uid,
+          createdByName: actor.displayName,
         }
         await db.collection('tasks').doc(id).set(task)
         return interaction.editReply(`✅ Task created in **${project.name}**\nID: \`${id.slice(0, 8)}\` · ${priorityEmoji(priority)} **${title}**`)
       }
 
+      // Look up a task by short-id prefix with a project allow-list filter (scoped, bounded).
+      async function findTaskByShortId(shortId) {
+        const accessibleProjectIds = new Set()
+        const projectsSnap = await db.collection('projects').get()
+        for (const p of projectsSnap.docs) {
+          if (isAppAdmin || getUserProjectRole(actor.uid, p.data())) accessibleProjectIds.add(p.id)
+        }
+        if (!accessibleProjectIds.size) return null
+        const snap = await db.collection('tasks').get()
+        return snap.docs.find(d => d.id.startsWith(shortId) && accessibleProjectIds.has(d.data().projectId)) || null
+      }
+
       if (sub === 'done') {
         const shortId = interaction.options.getString('id')
-        const snap = await db.collection('tasks').get()
-        const taskDoc = snap.docs.find(d => d.id.startsWith(shortId))
-        if (!taskDoc) return interaction.editReply({ content: `❌ Task \`${shortId}\` not found.`, ephemeral: true })
+        const taskDoc = await findTaskByShortId(shortId)
+        if (!taskDoc) return interaction.editReply({ content: `❌ Task \`${shortId}\` not found or no access.`, ephemeral: true })
         await taskDoc.ref.update({ status: 'done', completedAt: new Date().toISOString() })
         return interaction.editReply(`✅ Marked **${taskDoc.data().title}** as done!`)
       }
@@ -131,9 +194,8 @@ client.on('interactionCreate', async (interaction) => {
       if (sub === 'update') {
         const shortId = interaction.options.getString('id')
         const status = interaction.options.getString('status')
-        const snap = await db.collection('tasks').get()
-        const taskDoc = snap.docs.find(d => d.id.startsWith(shortId))
-        if (!taskDoc) return interaction.editReply({ content: `❌ Task \`${shortId}\` not found.`, ephemeral: true })
+        const taskDoc = await findTaskByShortId(shortId)
+        if (!taskDoc) return interaction.editReply({ content: `❌ Task \`${shortId}\` not found or no access.`, ephemeral: true })
         await taskDoc.ref.update({
           status,
           completedAt: status === 'done' ? new Date().toISOString() : null,
@@ -155,7 +217,12 @@ client.on('interactionCreate', async (interaction) => {
           const projectsSnap = await db.collection('projects').get()
           const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
           const project = projects.find(p => p.name.toLowerCase().includes(projectName.toLowerCase()))
-          projectId = project?.id || null
+          if (!project) return interaction.editReply({ content: `❌ Project "${projectName}" not found.`, ephemeral: true })
+          const role = getUserProjectRole(actor.uid, project)
+          if (!isAppAdmin && !hasRole(role, 'member')) {
+            return interaction.editReply({ content: '🔒 You do not have permission to add notes to that project.', ephemeral: true })
+          }
+          projectId = project.id
         }
         const id = uuid()
         await db.collection('notes').doc(id).set({
@@ -164,6 +231,8 @@ client.on('interactionCreate', async (interaction) => {
           content,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          createdBy: actor.uid,
+          createdByName: actor.displayName,
         })
         return interaction.editReply(`📝 Note saved!\n> ${content.slice(0, 100)}${content.length > 100 ? '…' : ''}`)
       }
@@ -171,14 +240,34 @@ client.on('interactionCreate', async (interaction) => {
       if (sub === 'list') {
         const projectName = interaction.options.getString('project')
         let query = db.collection('notes')
+        let scopedProjectId = null
         if (projectName) {
           const projectsSnap = await db.collection('projects').get()
           const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
           const project = projects.find(p => p.name.toLowerCase().includes(projectName.toLowerCase()))
-          if (project) query = query.where('projectId', '==', project.id)
+          if (!project) return interaction.editReply({ content: `❌ Project "${projectName}" not found.`, ephemeral: true })
+          if (!isAppAdmin && !getUserProjectRole(actor.uid, project)) {
+            return interaction.editReply({ content: '🔒 You do not have access to that project.', ephemeral: true })
+          }
+          query = query.where('projectId', '==', project.id)
+          scopedProjectId = project.id
         }
         const snap = await query.get()
+        // Build the set of project ids this user can access so cross-project notes stay scoped.
+        let accessibleProjectIds = null
+        if (!isAppAdmin && !scopedProjectId) {
+          const projectsSnap = await db.collection('projects').get()
+          accessibleProjectIds = new Set(projectsSnap.docs
+            .filter(d => getUserProjectRole(actor.uid, d.data()))
+            .map(d => d.id))
+        }
         const notes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .filter(n => {
+            if (isAppAdmin || scopedProjectId) return true
+            // personal notes (no projectId): only the creator sees them
+            if (!n.projectId) return n.createdBy === actor.uid
+            return accessibleProjectIds.has(n.projectId)
+          })
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 8)
 

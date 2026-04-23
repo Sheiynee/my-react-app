@@ -35,12 +35,32 @@ export default function Login() {
     if (!authLoading && user) navigate('/', { replace: true })
   }, [user, authLoading, navigate])
 
-  // Handle the /auth/callback route passing the Discord custom token
+  // Handle the /auth/callback route passing a one-time code (not a raw Firebase token).
+  // We POST the code to /auth/exchange to receive the custom token over HTTPS JSON,
+  // keeping the token out of browser history, Referer headers, and server logs.
   useEffect(() => {
-    const token = searchParams.get('token')
-    if (!token) return
+    const code = searchParams.get('code')
+    // Back-compat: if an old client still sends ?token=, reject it to force re-auth.
+    if (searchParams.get('token')) {
+      setError('Session expired. Please sign in again.')
+      // Strip the token from the URL history entry.
+      window.history.replaceState({}, '', '/login')
+      return
+    }
+    if (!code) return
     setLoading(true)
-    loginWithDiscordToken(token)
+    // Remove the code from the URL immediately so it can't be replayed on refresh.
+    window.history.replaceState({}, '', '/login')
+    fetch(`${BASE}/auth/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('exchange_failed')
+        const { token } = await res.json()
+        return loginWithDiscordToken(token)
+      })
       .then(() => navigate('/', { replace: true }))
       .catch(() => {
         setError('Discord sign-in failed. Please try again.')
