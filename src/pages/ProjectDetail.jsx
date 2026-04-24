@@ -172,7 +172,7 @@ export default function ProjectDetail() {
     const ctrl = new AbortController()
     api.getComments(taskModal.id, { signal: ctrl.signal })
       .then(setComments)
-      .catch((err) => { if (!err?.aborted) console.error(err) })
+      .catch((err) => { if (!err?.aborted && import.meta.env.DEV) console.error(err) })
     return () => ctrl.abort()
   }, [taskModal?.id, taskModal?.mode])
 

@@ -26,8 +26,20 @@ const ALLOWED_ORIGINS = new Set([
 ])
 
 app.use(helmet({
-  // Custom token is delivered via POST JSON now, so no need to relax CSP for redirects.
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // Explicit CSP: this API is JSON-only, so no scripts, styles, or frames
+  // should ever be loaded from an API response. Acts as a second line of
+  // defence if helmet's default policy ever changes.
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'none'"],
+    },
+  },
+  referrerPolicy: { policy: 'no-referrer' },
 }))
 
 app.use(cors({
@@ -59,6 +71,15 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many auth requests' },
+})
+// Extra-tight limiter for the token-exchange endpoint. A leaked 60s one-time
+// code shouldn't be brute-forceable — cap at a handful of attempts per minute.
+const exchangeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many exchange attempts' },
 })
 app.use('/api', globalLimiter)
 app.use('/auth', authLimiter)
@@ -160,7 +181,37 @@ function canAccessProject(uid, projectData) {
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+const IS_PROD = process.env.NODE_ENV === 'production'
+
+// Validate FRONTEND_URL at startup against the allow-list. Prevents open-redirect
+// if the env var is misconfigured or attacker-influenced — every OAuth redirect
+// target is now guaranteed to be a known origin.
+function resolveFrontendUrl() {
+  const raw = process.env.FRONTEND_URL || 'http://localhost:5173'
+  let parsed
+  try { parsed = new URL(raw) } catch { throw new Error(`FRONTEND_URL is not a valid URL: ${raw}`) }
+  if (IS_PROD && parsed.protocol !== 'https:') {
+    throw new Error(`FRONTEND_URL must be https:// in production (got ${parsed.protocol}//)`)
+  }
+  const origin = parsed.origin
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    throw new Error(`FRONTEND_URL origin ${origin} is not in ALLOWED_ORIGINS. Add it via EXTRA_ALLOWED_ORIGINS or the hard-coded list.`)
+  }
+  return raw.replace(/\/$/, '')
+}
+const FRONTEND_URL = resolveFrontendUrl()
+
+// Same check for the OAuth redirect back from Discord.
+if (DISCORD_REDIRECT_URI) {
+  try {
+    const u = new URL(DISCORD_REDIRECT_URI)
+    if (IS_PROD && u.protocol !== 'https:') {
+      throw new Error(`DISCORD_REDIRECT_URI must be https:// in production (got ${u.protocol}//)`)
+    }
+  } catch (err) {
+    throw new Error(`DISCORD_REDIRECT_URI is invalid: ${err.message}`)
+  }
+}
 
 // CSRF state store for OAuth: maps state -> { expiresAt }. 10-min TTL, single-use.
 const oauthStates = new Map()
@@ -224,10 +275,21 @@ app.get('/auth/discord/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/login?error=email_unverified`)
     }
 
+    // Defence in depth: Discord sends numeric ids and hex avatar hashes, but we validate
+    // before interpolating into a URL so a malformed / malicious response can't inject.
+    const DISCORD_ID_RE = /^[0-9]{1,32}$/
+    const DISCORD_HASH_RE = /^a?_?[a-f0-9]{1,64}$/i
+    if (!DISCORD_ID_RE.test(String(discordUser.id || ''))) {
+      return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`)
+    }
     const uid = `discord_${discordUser.id}`
-    const avatarUrl = discordUser.avatar
-      ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
-      : `https://cdn.discordapp.com/embed/avatars/${parseInt(discordUser.discriminator || 0) % 5}.png`
+    const safeAvatarHash = typeof discordUser.avatar === 'string' && DISCORD_HASH_RE.test(discordUser.avatar)
+      ? discordUser.avatar
+      : null
+    const fallbackIdx = Math.abs(parseInt(discordUser.discriminator, 10) || 0) % 5
+    const avatarUrl = safeAvatarHash
+      ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${safeAvatarHash}.png`
+      : `https://cdn.discordapp.com/embed/avatars/${fallbackIdx}.png`
 
     // Create or update the user in Firebase Auth
     try {
@@ -274,7 +336,7 @@ app.get('/auth/discord/callback', async (req, res) => {
 })
 
 // Exchange one-time code for a Firebase custom token (single-use, 60s TTL).
-app.post('/auth/exchange', async (req, res) => {
+app.post('/auth/exchange', exchangeLimiter, async (req, res) => {
   const { code } = req.body || {}
   if (!code || typeof code !== 'string') return bad(res, 'code is required')
   const entry = oauthCodes.get(code)
