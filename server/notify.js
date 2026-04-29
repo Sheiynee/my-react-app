@@ -32,10 +32,21 @@ async function sendDiscordChannelMention(discordUserId, taskTitle, projectName, 
   })
 }
 
-// Resolves member IDs → array of { member, user } for members who have a linked Discord account.
-// member.discordId stores the Discord username entered manually in the Team UI.
-// The users collection stores discordUsername (handle) + discordId (numeric snowflake from OAuth).
-// We query by discordUsername so we can use the numeric discordId for @mentions.
+// Resolves a Discord username → numeric snowflake ID using the Guild Members Search API.
+// member.discordId stores the username entered in the Team UI — this turns it into a mentionable ID.
+async function resolveDiscordNumericId(username) {
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${process.env.DISCORD_GUILD_ID}/members/search?query=${encodeURIComponent(username)}&limit=10`,
+    { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
+  )
+  if (!res.ok) return null
+  const members = await res.json()
+  // Search returns prefix matches — find the exact username match (case-insensitive)
+  const match = members.find(m => m.user.username.toLowerCase() === username.toLowerCase())
+  return match?.user.id ?? null
+}
+
+// Resolves member IDs → array of { member, numericDiscordId }
 async function resolveMemberUsers(memberIds) {
   const memberDocs = await Promise.all(
     memberIds.map(id => db.collection('members').doc(id).get())
@@ -45,12 +56,9 @@ async function resolveMemberUsers(memberIds) {
     if (!doc.exists) continue
     const member = { id: doc.id, ...doc.data() }
     if (!member.discordId) continue
-    const userSnap = await db.collection('users')
-      .where('discordUsername', '==', member.discordId)
-      .limit(1)
-      .get()
-    if (userSnap.empty) continue
-    results.push({ member, user: userSnap.docs[0].data() })
+    const numericDiscordId = await resolveDiscordNumericId(member.discordId)
+    if (!numericDiscordId) continue
+    results.push({ member, numericDiscordId })
   }
   return results
 }
@@ -91,7 +99,7 @@ export async function notifyAssignment({ addedMemberIds, task, projectName, assi
   const embed = buildEmbed(task, projectName, assignedByName)
 
   await Promise.allSettled(
-    resolved.map(async ({ member, user }) => {
+    resolved.map(async ({ member, numericDiscordId }) => {
       // Email disabled until a verified sender domain is configured in Resend.
       // Uncomment and set EMAIL_FROM in .env to re-enable.
       // if (user.email) {
@@ -107,8 +115,8 @@ export async function notifyAssignment({ addedMemberIds, task, projectName, assi
       //   })
       // }
 
-      // Discord channel mention — user.discordId is the numeric snowflake from OAuth
-      await sendDiscordChannelMention(user.discordId, task.title, projectName, [embed])
+      // Discord channel mention — numericDiscordId resolved from username via Guild Members API
+      await sendDiscordChannelMention(numericDiscordId, task.title, projectName, [embed])
     })
   )
 }
