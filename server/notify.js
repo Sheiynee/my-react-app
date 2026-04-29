@@ -24,13 +24,6 @@ async function discordPost(path, body) {
   return res.json()
 }
 
-async function sendDiscordDM(discordUserId, content, embeds) {
-  // Open (or reuse) a DM channel with the user, then post into it.
-  const dm = await discordPost('/users/@me/channels', { recipient_id: discordUserId })
-  if (!dm.id) throw new Error(`Failed to open DM channel for user ${discordUserId}`)
-  await discordPost(`/channels/${dm.id}/messages`, { content, embeds })
-}
-
 async function sendDiscordChannelMention(discordUserId, taskTitle, projectName, embeds) {
   if (!DISCORD_NOTIFICATION_CHANNEL_ID) return
   await discordPost(`/channels/${DISCORD_NOTIFICATION_CHANNEL_ID}/messages`, {
@@ -94,28 +87,22 @@ export async function notifyAssignment({ addedMemberIds, task, projectName, assi
 
   await Promise.allSettled(
     resolved.map(async ({ member, user }) => {
-      // Email
-      if (user.email) {
-        await sendAssignmentEmail({
-          toEmail: user.email,
-          memberName: member.name || user.displayName || 'there',
-          taskTitle: task.title,
-          projectName,
-          projectId: task.projectId,
-          assignedByName,
-          priority: task.priority,
-          dueDate: task.dueDate,
-        })
-      }
+      // Email disabled until a verified sender domain is configured in Resend.
+      // Uncomment and set EMAIL_FROM in .env to re-enable.
+      // if (user.email) {
+      //   await sendAssignmentEmail({
+      //     toEmail: user.email,
+      //     memberName: member.name || user.displayName || 'there',
+      //     taskTitle: task.title,
+      //     projectName,
+      //     projectId: task.projectId,
+      //     assignedByName,
+      //     priority: task.priority,
+      //     dueDate: task.dueDate,
+      //   })
+      // }
 
-      // Discord DM
-      await sendDiscordDM(
-        member.discordId,
-        `👋 Hey <@${member.discordId}>, you've been assigned a new task!`,
-        [embed]
-      )
-
-      // Discord channel mention (only if DISCORD_NOTIFICATION_CHANNEL_ID is set)
+      // Discord channel mention
       await sendDiscordChannelMention(member.discordId, task.title, projectName, [embed])
     })
   )
