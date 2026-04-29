@@ -9,6 +9,7 @@ import { v4 as uuid } from 'uuid'
 import admin from 'firebase-admin'
 import fetch from 'node-fetch'
 import { db } from './db.js'
+import { notifyAssignment } from './notify.js'
 
 const { FieldValue } = admin.firestore
 
@@ -623,6 +624,18 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
   }
   await db.collection('tasks').doc(id).set(task)
   res.json({ id, ...task })
+
+  const assignedIds = task.assigneeIds?.length
+    ? task.assigneeIds
+    : task.assigneeId ? [task.assigneeId] : []
+  if (assignedIds.length) {
+    notifyAssignment({
+      addedMemberIds: assignedIds,
+      task: { ...task, projectId },
+      projectName: projectDoc.data().name || 'Unknown Project',
+      assignedByName: req.user.name || req.user.email || 'Someone',
+    }).catch(err => console.error('[notify] task create:', err))
+  }
 })
 
 app.put('/api/tasks/:id', requireAuth, async (req, res) => {
@@ -645,6 +658,19 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   }
   await ref.update(updated)
   res.json({ id: req.params.id, ...updated })
+
+  if (safeBody.assigneeIds) {
+    const oldSet = new Set(task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []))
+    const addedIds = safeBody.assigneeIds.filter(id => !oldSet.has(id))
+    if (addedIds.length) {
+      notifyAssignment({
+        addedMemberIds: addedIds,
+        task: updated,
+        projectName: projectDoc.exists ? projectDoc.data().name : 'Unknown Project',
+        assignedByName: req.user.name || req.user.email || 'Someone',
+      }).catch(err => console.error('[notify] task update:', err))
+    }
+  }
 })
 
 app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
