@@ -710,7 +710,7 @@ function pickMemberFields(body) {
   if (typeof body.name === 'string') out.name = body.name.trim().slice(0, 200)
   if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) out.color = body.color
   if (typeof body.role === 'string') out.role = body.role.slice(0, 100)
-  if (typeof body.discordId === 'string' && /^[0-9]{1,32}$/.test(body.discordId)) out.discordId = body.discordId
+  if (typeof body.discordId === 'string') out.discordId = body.discordId.trim().slice(0, 100)
   return out
 }
 

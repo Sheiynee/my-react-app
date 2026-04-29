@@ -33,6 +33,9 @@ async function sendDiscordChannelMention(discordUserId, taskTitle, projectName, 
 }
 
 // Resolves member IDs → array of { member, user } for members who have a linked Discord account.
+// member.discordId stores the Discord username entered manually in the Team UI.
+// The users collection stores discordUsername (handle) + discordId (numeric snowflake from OAuth).
+// We query by discordUsername so we can use the numeric discordId for @mentions.
 async function resolveMemberUsers(memberIds) {
   const memberDocs = await Promise.all(
     memberIds.map(id => db.collection('members').doc(id).get())
@@ -42,10 +45,12 @@ async function resolveMemberUsers(memberIds) {
     if (!doc.exists) continue
     const member = { id: doc.id, ...doc.data() }
     if (!member.discordId) continue
-    // User doc ID is discord_{discordId} — set during OAuth in index.js
-    const userDoc = await db.collection('users').doc(`discord_${member.discordId}`).get()
-    if (!userDoc.exists) continue
-    results.push({ member, user: userDoc.data() })
+    const userSnap = await db.collection('users')
+      .where('discordUsername', '==', member.discordId)
+      .limit(1)
+      .get()
+    if (userSnap.empty) continue
+    results.push({ member, user: userSnap.docs[0].data() })
   }
   return results
 }
@@ -102,8 +107,8 @@ export async function notifyAssignment({ addedMemberIds, task, projectName, assi
       //   })
       // }
 
-      // Discord channel mention
-      await sendDiscordChannelMention(member.discordId, task.title, projectName, [embed])
+      // Discord channel mention — user.discordId is the numeric snowflake from OAuth
+      await sendDiscordChannelMention(user.discordId, task.title, projectName, [embed])
     })
   )
 }
