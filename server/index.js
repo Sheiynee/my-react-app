@@ -683,16 +683,25 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   if (!isAppAdmin(req) && !hasRole(projectRole, 'manager') && task.createdBy !== req.user.uid) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  // Atomic delete: fetch children first, then delete task + subtasks + comments
+  // Atomic delete: fetch children first, then delete task + subtasks + all comments
   // in a single batch so a partial failure can't leave orphan rows.
   const [subSnap, commentSnap] = await Promise.all([
     db.collection('tasks').where('parentId', '==', req.params.id).get(),
     db.collection('comments').where('taskId', '==', req.params.id).get(),
   ])
+  // Also collect comments belonging to subtasks so none are orphaned.
+  const subIds = subSnap.docs.map(d => d.id)
+  let subCommentDocs = []
+  for (let i = 0; i < subIds.length; i += 30) {
+    const chunk = subIds.slice(i, i + 30)
+    const snap = await db.collection('comments').where('taskId', 'in', chunk).get()
+    subCommentDocs.push(...snap.docs)
+  }
   const batch = db.batch()
   batch.delete(taskRef)
   subSnap.docs.forEach(d => batch.delete(d.ref))
   commentSnap.docs.forEach(d => batch.delete(d.ref))
+  subCommentDocs.forEach(d => batch.delete(d.ref))
   await batch.commit()
   res.json({ ok: true })
 })
@@ -823,11 +832,10 @@ app.put('/api/notes/:id', requireAuth, async (req, res) => {
   const note = doc.data()
   if (note.projectId) {
     const projectDoc = await db.collection('projects').doc(note.projectId).get()
-    if (projectDoc.exists) {
-      const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
-      if (!isAppAdmin(req) && !hasRole(projectRole, 'member') && note.createdBy !== req.user.uid) {
-        return res.status(403).json({ error: 'Forbidden' })
-      }
+    if (!projectDoc.exists) return res.status(403).json({ error: 'Forbidden' })
+    const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+    if (!isAppAdmin(req) && !hasRole(projectRole, 'member') && note.createdBy !== req.user.uid) {
+      return res.status(403).json({ error: 'Forbidden' })
     }
   }
   const safeNoteBody = pickNoteFields(req.body || {})
@@ -843,11 +851,10 @@ app.delete('/api/notes/:id', requireAuth, async (req, res) => {
   const note = doc.data()
   if (note.projectId) {
     const projectDoc = await db.collection('projects').doc(note.projectId).get()
-    if (projectDoc.exists) {
-      const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
-      if (!isAppAdmin(req) && !hasRole(projectRole, 'manager') && note.createdBy !== req.user.uid) {
-        return res.status(403).json({ error: 'Forbidden' })
-      }
+    if (!projectDoc.exists) return res.status(403).json({ error: 'Forbidden' })
+    const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
+    if (!isAppAdmin(req) && !hasRole(projectRole, 'manager') && note.createdBy !== req.user.uid) {
+      return res.status(403).json({ error: 'Forbidden' })
     }
   }
   await db.collection('notes').doc(req.params.id).delete()

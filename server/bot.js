@@ -5,6 +5,9 @@ import { db } from './db.js'
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] })
 
+const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
+const VALID_STATUSES = new Set(['todo', 'in_progress', 'done'])
+
 client.once('ready', () => {
   console.log(`✅ Bot ready as ${client.user.tag}`)
 })
@@ -86,7 +89,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (sub === 'create') {
         const name = interaction.options.getString('name')
-        const description = interaction.options.getString('description') || ''
+        const description = (interaction.options.getString('description') || '').slice(0, 2000)
         const colors = ['#388bfd', '#3fb950', '#d29922', '#f0883e', '#bc8cff', '#f85149', '#58a6ff']
         const id = uuid()
         const project = {
@@ -143,6 +146,9 @@ client.on('interactionCreate', async (interaction) => {
         const projectName = interaction.options.getString('project')
         const title = interaction.options.getString('title')
         const priority = interaction.options.getString('priority') || 'medium'
+        if (!VALID_PRIORITIES.has(priority)) {
+          return interaction.editReply({ content: `❌ Invalid priority. Choose one of: ${[...VALID_PRIORITIES].join(', ')}`, ephemeral: true })
+        }
         const projectsSnap = await db.collection('projects').get()
         const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         const project = projects.find(p => p.name.toLowerCase().includes(projectName.toLowerCase()))
@@ -194,6 +200,9 @@ client.on('interactionCreate', async (interaction) => {
       if (sub === 'update') {
         const shortId = interaction.options.getString('id')
         const status = interaction.options.getString('status')
+        if (!VALID_STATUSES.has(status)) {
+          return interaction.editReply({ content: `❌ Invalid status. Choose one of: ${[...VALID_STATUSES].join(', ')}`, ephemeral: true })
+        }
         const taskDoc = await findTaskByShortId(shortId)
         if (!taskDoc) return interaction.editReply({ content: `❌ Task \`${shortId}\` not found or no access.`, ephemeral: true })
         await taskDoc.ref.update({
@@ -210,7 +219,7 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'note') {
       if (sub === 'add') {
         const content = interaction.options.getString('content')
-        const title = interaction.options.getString('title') || content.slice(0, 50)
+        const title = (interaction.options.getString('title') || content.slice(0, 50)).slice(0, 300)
         const projectName = interaction.options.getString('project')
         let projectId = null
         if (projectName) {
