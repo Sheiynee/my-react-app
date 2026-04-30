@@ -7,7 +7,6 @@ import sanitizeHtml from 'sanitize-html'
 import 'dotenv/config'
 import { v4 as uuid } from 'uuid'
 import admin from 'firebase-admin'
-import fetch from 'node-fetch'
 import { db } from './db.js'
 import { notifyAssignment } from './notify.js'
 
@@ -433,6 +432,17 @@ function pickProjectFields(body) {
   if (typeof body.description === 'string') out.description = body.description.slice(0, 2000)
   if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) out.color = body.color
   if (Array.isArray(body.memberIds)) out.memberIds = body.memberIds.filter(x => typeof x === 'string').slice(0, 200)
+  if (Array.isArray(body.columns)) {
+    out.columns = body.columns
+      .filter(c => c && typeof c === 'object' && typeof c.key === 'string' && typeof c.label === 'string')
+      .slice(0, 20)
+      .map(c => ({
+        key: c.key.trim().slice(0, 60),
+        label: c.label.trim().slice(0, 60),
+        color: typeof c.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(c.color) ? c.color : '#9ca3af',
+      }))
+      .filter(c => c.key && c.label)
+  }
   return out
 }
 
@@ -607,6 +617,12 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
   if (!projectDoc.exists) return res.status(404).json({ error: 'Project not found' })
   const projectRole = getUserProjectRole(req.user.uid, projectDoc.data())
   if (!isAppAdmin(req) && !hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
+  if (picked.parentId) {
+    const parentDoc = await db.collection('tasks').doc(picked.parentId).get()
+    if (!parentDoc.exists) return bad(res, 'parentId not found')
+    if (parentDoc.data().projectId !== projectId) return bad(res, 'parentId belongs to a different project')
+    if (parentDoc.data().parentId) return bad(res, 'subtasks cannot have subtasks')
+  }
   const id = uuid()
   const task = {
     projectId,
@@ -650,13 +666,22 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   }
   const safeBody = pickTaskFields(req.body || {})
   if (Object.keys(safeBody).length === 0) return bad(res, 'No valid fields to update')
-  const updated = { ...task, ...safeBody }
-  if (safeBody.status === 'done' && !task.completedAt) {
-    updated.completedAt = new Date().toISOString()
-  } else if (safeBody.status && safeBody.status !== 'done') {
-    updated.completedAt = null
+  if (safeBody.parentId) {
+    if (safeBody.parentId === req.params.id) return bad(res, 'task cannot be its own parent')
+    const parentDoc = await db.collection('tasks').doc(safeBody.parentId).get()
+    if (!parentDoc.exists) return bad(res, 'parentId not found')
+    if (parentDoc.data().projectId !== task.projectId) return bad(res, 'parentId belongs to a different project')
+    if (parentDoc.data().parentId) return bad(res, 'subtasks cannot have subtasks')
   }
-  await ref.update(updated)
+  const completedAtUpdate = {}
+  if (safeBody.status === 'done' && !task.completedAt) {
+    completedAtUpdate.completedAt = new Date().toISOString()
+  } else if (safeBody.status && safeBody.status !== 'done') {
+    completedAtUpdate.completedAt = null
+  }
+  const patch = { ...safeBody, ...completedAtUpdate }
+  await ref.update(patch)
+  const updated = { ...task, ...patch }
   res.json({ id: req.params.id, ...updated })
 
   if (safeBody.assigneeIds) {
@@ -887,7 +912,7 @@ app.post('/api/comments', requireAuth, async (req, res) => {
   if (!taskDoc.exists) return res.status(404).json({ error: 'Task not found' })
   const projectDoc = await db.collection('projects').doc(taskDoc.data().projectId).get()
   const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
-  if (!hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
+  if (!isAppAdmin(req) && !hasRole(projectRole, 'member')) return res.status(403).json({ error: 'Forbidden' })
   const id = uuid()
   // Comments are plain text — strip ALL HTML (no allowed tags). Enforces 2KB cap.
   const cleanContent = sanitizeHtml(content, { allowedTags: [], allowedAttributes: {} }).trim().slice(0, 2000)
@@ -912,7 +937,7 @@ app.delete('/api/comments/:id', requireAuth, async (req, res) => {
     if (!taskDoc.exists) return res.status(403).json({ error: 'Forbidden' })
     const projectDoc = await db.collection('projects').doc(taskDoc.data().projectId).get()
     const projectRole = projectDoc.exists ? getUserProjectRole(req.user.uid, projectDoc.data()) : null
-    if (!hasRole(projectRole, 'manager')) return res.status(403).json({ error: 'Forbidden' })
+    if (!isAppAdmin(req) && !hasRole(projectRole, 'manager')) return res.status(403).json({ error: 'Forbidden' })
   }
   await db.collection('comments').doc(req.params.id).delete()
   res.json({ ok: true })

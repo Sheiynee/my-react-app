@@ -1,10 +1,20 @@
 import { db } from './db.js'
 import { sendAssignmentEmail } from './email.js'
-import fetch from 'node-fetch'
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN
 const DISCORD_NOTIFICATION_CHANNEL_ID = process.env.DISCORD_NOTIFICATION_CHANNEL_ID
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+// Discord guild IDs are numeric snowflakes (17-20 digits). Validate at module load
+// so a misconfigured env var fails loudly rather than silently sending requests
+// to a malformed URL.
+if (DISCORD_GUILD_ID && !/^\d{17,20}$/.test(DISCORD_GUILD_ID)) {
+  throw new Error(`Invalid DISCORD_GUILD_ID: must be a numeric snowflake, got "${DISCORD_GUILD_ID}"`)
+}
+if (DISCORD_NOTIFICATION_CHANNEL_ID && !/^\d{17,20}$/.test(DISCORD_NOTIFICATION_CHANNEL_ID)) {
+  throw new Error(`Invalid DISCORD_NOTIFICATION_CHANNEL_ID: must be a numeric snowflake, got "${DISCORD_NOTIFICATION_CHANNEL_ID}"`)
+}
 
 const PRIORITY_EMOJI = { low: '🟢', medium: '🟡', high: '🟠', urgent: '🔴' }
 
@@ -36,8 +46,8 @@ async function sendDiscordChannelMention(discordUserId, taskTitle, projectName, 
 // member.discordId stores the username entered in the Team UI — this turns it into a mentionable ID.
 async function resolveDiscordNumericId(username) {
   const res = await fetch(
-    `https://discord.com/api/v10/guilds/${process.env.DISCORD_GUILD_ID}/members/search?query=${encodeURIComponent(username)}&limit=10`,
-    { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
+    `https://discord.com/api/v10/guilds/${DISCORD_GUILD_ID}/members/search?query=${encodeURIComponent(username)}&limit=10`,
+    { headers: { Authorization: `Bot ${DISCORD_TOKEN}` } }
   )
   if (!res.ok) return null
   const members = await res.json()

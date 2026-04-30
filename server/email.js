@@ -7,6 +7,15 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM || 'TaskFlow <onboarding@resend.dev>'
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 const PRIORITY_LABEL = {
   low: '🟢 Low',
   medium: '🟡 Medium',
@@ -29,6 +38,14 @@ export async function sendAssignmentEmail({
     ? new Date(dueDate).toLocaleDateString('en-US', { dateStyle: 'medium' })
     : 'No due date'
 
+  const safeMember = escapeHtml(memberName)
+  const safeAssigner = escapeHtml(assignedByName)
+  const safeProject = escapeHtml(projectName)
+  const safeTitle = escapeHtml(taskTitle)
+  const safePriority = escapeHtml(priorityLabel)
+  const safeDue = escapeHtml(dueDateStr)
+  const safeUrl = `${FRONTEND_URL}/projects/${encodeURIComponent(projectId)}`
+
   await resend.emails.send({
     from: FROM,
     to: toEmail,
@@ -39,18 +56,18 @@ export async function sendAssignmentEmail({
           <h1 style="color:#ffffff;margin:0;font-size:20px">📋 New Task Assignment</h1>
         </div>
         <div style="border:1px solid #e1e4e8;border-top:none;border-radius:0 0 8px 8px;padding:24px">
-          <p style="margin:0 0 16px;color:#24292f">Hi <strong>${memberName}</strong>,</p>
+          <p style="margin:0 0 16px;color:#24292f">Hi <strong>${safeMember}</strong>,</p>
           <p style="margin:0 0 16px;color:#24292f">
-            <strong>${assignedByName}</strong> has assigned you to a task in
-            <strong>${projectName}</strong>.
+            <strong>${safeAssigner}</strong> has assigned you to a task in
+            <strong>${safeProject}</strong>.
           </p>
           <div style="background:#f6f8fa;border-radius:8px;padding:16px;margin:16px 0;border-left:4px solid #388bfd">
-            <p style="margin:0 0 8px;color:#24292f;font-size:16px;font-weight:600">${taskTitle}</p>
-            <p style="margin:0 0 6px;color:#57606a;font-size:14px"><strong>Priority:</strong> ${priorityLabel}</p>
-            <p style="margin:0;color:#57606a;font-size:14px"><strong>Due:</strong> ${dueDateStr}</p>
+            <p style="margin:0 0 8px;color:#24292f;font-size:16px;font-weight:600">${safeTitle}</p>
+            <p style="margin:0 0 6px;color:#57606a;font-size:14px"><strong>Priority:</strong> ${safePriority}</p>
+            <p style="margin:0;color:#57606a;font-size:14px"><strong>Due:</strong> ${safeDue}</p>
           </div>
           <a
-            href="${FRONTEND_URL}/projects/${projectId}"
+            href="${safeUrl}"
             style="display:inline-block;background:#388bfd;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:6px;font-weight:600;margin-top:8px"
           >
             View Task →
