@@ -1,9 +1,9 @@
 import { db } from './db.js'
 import { sendAssignmentEmail } from './email.js'
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN
-const DISCORD_NOTIFICATION_CHANNEL_ID = process.env.DISCORD_NOTIFICATION_CHANNEL_ID
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN?.trim()
+const DISCORD_NOTIFICATION_CHANNEL_ID = process.env.DISCORD_NOTIFICATION_CHANNEL_ID?.trim()
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID?.trim()
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
 // Discord guild IDs are numeric snowflakes (17-20 digits). Validate at module load
