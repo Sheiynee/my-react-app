@@ -134,7 +134,6 @@ export function AppProvider({ children }) {
     setTasks(prev => prev.map(t => ({
       ...t,
       assigneeIds: (t.assigneeIds || []).filter(aId => aId !== id),
-      assigneeId: t.assigneeId === id ? null : t.assigneeId,
     })))
   }
 

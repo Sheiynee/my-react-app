@@ -33,8 +33,8 @@ export default function Team() {
     }
   }
 
-  const taskCount = (id) => tasks.filter(t => (t.assigneeIds?.includes(id) || t.assigneeId === id) && !t.parentId).length
-  const openCount = (id) => tasks.filter(t => (t.assigneeIds?.includes(id) || t.assigneeId === id) && t.status !== 'done' && !t.parentId).length
+  const taskCount = (id) => tasks.filter(t => t.assigneeIds?.includes(id) && !t.parentId).length
+  const openCount = (id) => tasks.filter(t => t.assigneeIds?.includes(id) && t.status !== 'done' && !t.parentId).length
 
   return (
     <div className="p-8 max-w-6xl">

@@ -166,7 +166,7 @@ client.on('interactionCreate', async (interaction) => {
           description: '',
           status: 'todo',
           priority,
-          assigneeId: null,
+          assigneeIds: [],
           dueDate: null,
           completedAt: null,
           createdAt: new Date().toISOString(),

@@ -176,6 +176,15 @@ function canAccessProject(uid, projectData) {
   return getUserProjectRole(uid, projectData) !== null
 }
 
+// Fetches the projects a user can access, using the denormalized
+// `accessibleUids` index (one indexed query instead of a full scan).
+// The field is maintained on every project/role mutation; backfill existing
+// docs with server/scripts/backfill-accessible-uids.js.
+async function listAccessibleProjects(uid) {
+  const snap = await db.collection('projects').where('accessibleUids', 'array-contains', uid).get()
+  return snap.docs
+}
+
 // ── Discord OAuth ──────────────────────────────────────────
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID
@@ -412,10 +421,12 @@ app.put('/api/users/:uid/role', requireAuth, async (req, res) => {
 // ── Projects ──────────────────────────────────────────────
 
 app.get('/api/projects', requireAuth, async (req, res) => {
-  const snap = await db.collection('projects').get()
-  if (isAppAdmin(req)) return res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-  const uid = req.user.uid
-  res.json(snap.docs.filter(d => canAccessProject(uid, d.data())).map(d => ({ id: d.id, ...d.data() })))
+  if (isAppAdmin(req)) {
+    const snap = await db.collection('projects').get()
+    return res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  }
+  const docs = await listAccessibleProjects(req.user.uid)
+  res.json(docs.map(d => ({ id: d.id, ...d.data() })))
 })
 
 app.get('/api/projects/:id', requireAuth, async (req, res) => {
@@ -456,6 +467,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
     memberIds: [],
     ...picked,
     roles: { [req.user.uid]: 'admin' },
+    accessibleUids: [req.user.uid],
     createdAt: new Date().toISOString(),
     createdBy: req.user.uid,
     createdByName: req.user.name || req.user.email || 'Unknown',
@@ -506,7 +518,10 @@ app.get('/api/projects/:id/members', requireAuth, async (req, res) => {
   // Migrate legacy projects: if the creator isn't in the roles map, add them now
   if (data.createdBy && !roles[data.createdBy]) {
     roles[data.createdBy] = 'admin'
-    await ref.update({ [`roles.${data.createdBy}`]: 'admin' })
+    await ref.update({
+      [`roles.${data.createdBy}`]: 'admin',
+      accessibleUids: FieldValue.arrayUnion(data.createdBy),
+    })
   }
   const uids = Object.keys(roles)
   if (uids.length === 0) return res.json([])
@@ -538,10 +553,14 @@ app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Only admins can assign manager or admin roles' })
   }
   const existingRoles = doc.data().roles || {}
-  const updates = { [`roles.${uid}`]: role }
+  const updates = {
+    [`roles.${uid}`]: role,
+    accessibleUids: FieldValue.arrayUnion(uid),
+  }
   // Migrate legacy projects: write the creator into the roles map if not already there
   if (doc.data().createdBy && !existingRoles[doc.data().createdBy]) {
     updates[`roles.${doc.data().createdBy}`] = 'admin'
+    updates.accessibleUids = FieldValue.arrayUnion(uid, doc.data().createdBy)
   }
   await ref.update(updates)
   res.json({ uid, role })
@@ -571,7 +590,10 @@ app.delete('/api/projects/:id/members/:uid', requireAuth, async (req, res) => {
   if (req.params.uid === req.user.uid && adminCount <= 1) {
     return bad(res, 'Cannot remove yourself as the only admin')
   }
-  await ref.update({ [`roles.${req.params.uid}`]: FieldValue.delete() })
+  await ref.update({
+    [`roles.${req.params.uid}`]: FieldValue.delete(),
+    accessibleUids: FieldValue.arrayRemove(req.params.uid),
+  })
   res.json({ ok: true })
 })
 
@@ -585,8 +607,8 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
     return res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
   }
   const uid = req.user.uid
-  const projectSnap = await db.collection('projects').get()
-  const accessibleIds = new Set(projectSnap.docs.filter(d => canAccessProject(uid, d.data())).map(d => d.id))
+  const accessibleDocs = await listAccessibleProjects(uid)
+  const accessibleIds = new Set(accessibleDocs.map(d => d.id))
   if (req.query.projectId && !accessibleIds.has(req.query.projectId)) return res.json([])
   const snap = await query.get()
   res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => accessibleIds.has(t.projectId)))
@@ -602,7 +624,6 @@ function pickTaskFields(body) {
   if (typeof body.status === 'string' && VALID_STATUSES.has(body.status)) out.status = body.status
   if (typeof body.priority === 'string' && VALID_PRIORITIES.has(body.priority)) out.priority = body.priority
   if (body.parentId === null || typeof body.parentId === 'string') out.parentId = body.parentId
-  if (body.assigneeId === null || typeof body.assigneeId === 'string') out.assigneeId = body.assigneeId
   if (Array.isArray(body.assigneeIds)) out.assigneeIds = body.assigneeIds.filter(x => typeof x === 'string').slice(0, 50)
   if (body.dueDate === null || typeof body.dueDate === 'string') out.dueDate = body.dueDate
   return out
@@ -630,7 +651,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
     description: '',
     status: 'todo',
     priority: 'medium',
-    assigneeId: null,
+    assigneeIds: [],
     dueDate: null,
     completedAt: null,
     ...picked,
@@ -641,9 +662,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
   await db.collection('tasks').doc(id).set(task)
   res.json({ id, ...task })
 
-  const assignedIds = task.assigneeIds?.length
-    ? task.assigneeIds
-    : task.assigneeId ? [task.assigneeId] : []
+  const assignedIds = task.assigneeIds || []
   if (assignedIds.length) {
     notifyAssignment({
       addedMemberIds: assignedIds,
@@ -685,7 +704,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   res.json({ id: req.params.id, ...updated })
 
   if (safeBody.assigneeIds) {
-    const oldSet = new Set(task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []))
+    const oldSet = new Set(task.assigneeIds || [])
     const addedIds = safeBody.assigneeIds.filter(id => !oldSet.has(id))
     if (addedIds.length) {
       notifyAssignment({
@@ -786,14 +805,10 @@ app.delete('/api/members/:id', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' })
   }
   await db.collection('members').doc(memberId).delete()
-  const [legacySnap, arraySnap] = await Promise.all([
-    db.collection('tasks').where('assigneeId', '==', memberId).get(),
-    db.collection('tasks').where('assigneeIds', 'array-contains', memberId).get(),
-  ])
+  const arraySnap = await db.collection('tasks').where('assigneeIds', 'array-contains', memberId).get()
   const batch = db.batch()
-  legacySnap.docs.forEach(d => batch.update(d.ref, { assigneeId: null }))
   arraySnap.docs.forEach(d => batch.update(d.ref, { assigneeIds: FieldValue.arrayRemove(memberId) }))
-  await batch.commit()
+  if (arraySnap.size > 0) await batch.commit()
   res.json({ ok: true })
 })
 
@@ -807,8 +822,8 @@ app.get('/api/notes', requireAuth, async (req, res) => {
     return res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
   }
   const uid = req.user.uid
-  const projectSnap = await db.collection('projects').get()
-  const accessibleIds = new Set(projectSnap.docs.filter(d => canAccessProject(uid, d.data())).map(d => d.id))
+  const accessibleDocs = await listAccessibleProjects(uid)
+  const accessibleIds = new Set(accessibleDocs.map(d => d.id))
   if (req.query.projectId && !accessibleIds.has(req.query.projectId)) return res.json([])
   const snap = await query.get()
   res.json(

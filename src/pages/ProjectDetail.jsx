@@ -29,12 +29,6 @@ const EMPTY_TASK = {
 
 const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
 
-function getAssigneeIds(task) {
-  if (task.assigneeIds?.length) return task.assigneeIds
-  if (task.assigneeId) return [task.assigneeId]
-  return []
-}
-
 function DroppableColumn({ id, children }) {
   const { setNodeRef, isOver } = useDroppable({ id })
   return (
@@ -203,7 +197,7 @@ export default function ProjectDetail() {
       description: task.description || '',
       status: task.status,
       priority: task.priority,
-      assigneeIds: getAssigneeIds(task),
+      assigneeIds: task.assigneeIds || [],
       dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
       parentId: task.parentId,
       links: task.links || [],
@@ -353,7 +347,7 @@ export default function ProjectDetail() {
   // Build the prop bundle for the hoisted TaskCardContent component. Keeps the JSX
   // call sites short and ensures both the kanban cell and the drag overlay stay in sync.
   function taskCardProps(task, col) {
-    const assignees = getAssigneeIds(task).map(memberById).filter(Boolean)
+    const assignees = (task.assigneeIds || []).map(memberById).filter(Boolean)
     const subs = subtasksOf(task.id)
     const isOverdue = !!task.dueDate
       && task.status !== lastColKey
@@ -448,7 +442,7 @@ export default function ProjectDetail() {
       {/* View task modal */}
       {taskModal?.mode === 'view' && (() => {
         const t = taskModal.task
-        const assigneeIds = getAssigneeIds(t)
+        const assigneeIds = t.assigneeIds || []
         const assignees = assigneeIds.map(memberById).filter(Boolean)
         const subs = subtasksOf(t.id)
         const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date()
