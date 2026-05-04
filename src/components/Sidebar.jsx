@@ -39,14 +39,22 @@ const NAV = [
   },
 ]
 
-export default function Sidebar({ dark, onToggleDark }) {
+export default function Sidebar({ dark, onToggleDark, mobileOpen, onMobileClose }) {
   const { projects, currentUser } = useApp()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
 
   return (
     <aside
-      className={`${collapsed ? 'w-[64px]' : 'w-[240px]'} flex-shrink-0 transition-[width] duration-300 ease-in-out flex flex-col bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-r border-gray-200/70 dark:border-zinc-800 overflow-hidden`}
+      className={`
+        ${mobileOpen ? 'flex' : 'hidden'} md:flex
+        ${mobileOpen ? 'fixed inset-y-0 left-0 z-50' : ''}
+        md:relative md:inset-auto md:z-auto
+        ${collapsed ? 'w-[64px]' : 'w-[240px]'}
+        flex-shrink-0 transition-[width] duration-300 ease-in-out flex-col
+        bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl
+        border-r border-gray-200/70 dark:border-zinc-800 overflow-hidden
+      `}
     >
       {/* Header */}
       <div className={`flex items-center h-14 border-b border-gray-100 dark:border-zinc-800/60 flex-shrink-0 px-3 ${collapsed ? 'justify-center' : 'justify-between'}`}>
@@ -55,9 +63,19 @@ export default function Sidebar({ dark, onToggleDark }) {
             TaskFlow
           </span>
         )}
+        {/* Close button — mobile only */}
+        {mobileOpen && (
+          <button
+            onClick={onMobileClose}
+            className="md:hidden w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-900 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors flex-shrink-0 ml-auto"
+            aria-label="Close navigation"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
+        )}
         <button
           onClick={() => setCollapsed(c => !c)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-900 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors flex-shrink-0"
+          className="hidden md:flex w-7 h-7 items-center justify-center rounded-lg text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-zinc-900 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors flex-shrink-0"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -70,7 +88,7 @@ export default function Sidebar({ dark, onToggleDark }) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0.5 p-2 flex-1 overflow-y-auto overflow-x-hidden">
+      <nav className="flex flex-col gap-0.5 p-2 flex-1 overflow-y-auto overflow-x-hidden" onClick={onMobileClose}>
         {NAV.map(n => (
           <NavLink
             key={n.to}

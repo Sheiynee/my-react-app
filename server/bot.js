@@ -88,7 +88,8 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (sub === 'create') {
-        const name = interaction.options.getString('name')
+        const name = (interaction.options.getString('name') || '').trim().slice(0, 200)
+        if (!name) return interaction.editReply({ content: '❌ Project name is required.', ephemeral: true })
         const description = (interaction.options.getString('description') || '').slice(0, 2000)
         const colors = ['#388bfd', '#3fb950', '#d29922', '#f0883e', '#bc8cff', '#f85149', '#58a6ff']
         const id = uuid()
@@ -97,8 +98,9 @@ client.on('interactionCreate', async (interaction) => {
           description,
           color: colors[Math.floor(Math.random() * colors.length)],
           memberIds: [],
-          // Proper ownership + role assignment so the project isn't an orphan.
           roles: { [actor.uid]: 'admin' },
+          // Required for listAccessibleProjects() query in the HTTP API to find this project.
+          accessibleUids: [actor.uid],
           createdAt: new Date().toISOString(),
           createdBy: actor.uid,
           createdByName: actor.displayName,
@@ -144,7 +146,8 @@ client.on('interactionCreate', async (interaction) => {
 
       if (sub === 'create') {
         const projectName = interaction.options.getString('project')
-        const title = interaction.options.getString('title')
+        const title = (interaction.options.getString('title') || '').trim().slice(0, 300)
+        if (!title) return interaction.editReply({ content: '❌ Task title is required.', ephemeral: true })
         const priority = interaction.options.getString('priority') || 'medium'
         if (!VALID_PRIORITIES.has(priority)) {
           return interaction.editReply({ content: `❌ Invalid priority. Choose one of: ${[...VALID_PRIORITIES].join(', ')}`, ephemeral: true })
@@ -177,12 +180,15 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.editReply(`✅ Task created in **${project.name}**\nID: \`${id.slice(0, 8)}\` · ${priorityEmoji(priority)} **${title}**`)
       }
 
-      // Look up a task by short-id prefix with a project allow-list filter (scoped, bounded).
+      // Look up a task by short-id prefix. Only projects where the user has at least
+      // 'member' role are included — mirrors the minimum role the HTTP API requires
+      // for task mutations (PUT /api/tasks/:id).
       async function findTaskByShortId(shortId) {
         const accessibleProjectIds = new Set()
         const projectsSnap = await db.collection('projects').get()
         for (const p of projectsSnap.docs) {
-          if (isAppAdmin || getUserProjectRole(actor.uid, p.data())) accessibleProjectIds.add(p.id)
+          const role = getUserProjectRole(actor.uid, p.data())
+          if (isAppAdmin || hasRole(role, 'member')) accessibleProjectIds.add(p.id)
         }
         if (!accessibleProjectIds.size) return null
         const snap = await db.collection('tasks').get()

@@ -396,11 +396,14 @@ app.put('/api/me', requireAuth, async (req, res) => {
 
 app.get('/api/users', requireAuth, async (req, res) => {
   const snap = await db.collection('users').get()
+  const admin = isAppAdmin(req)
   res.json(snap.docs.map(d => ({
     uid: d.id,
     displayName: d.data().displayName,
-    email: d.data().email,
     photoURL: d.data().photoURL,
+    role: d.data().role,
+    // Email only visible to admins — prevents enumeration / privacy leakage.
+    ...(admin && { email: d.data().email }),
   })))
 })
 
@@ -625,7 +628,15 @@ function pickTaskFields(body) {
   if (typeof body.priority === 'string' && VALID_PRIORITIES.has(body.priority)) out.priority = body.priority
   if (body.parentId === null || typeof body.parentId === 'string') out.parentId = body.parentId
   if (Array.isArray(body.assigneeIds)) out.assigneeIds = body.assigneeIds.filter(x => typeof x === 'string').slice(0, 50)
-  if (body.dueDate === null || typeof body.dueDate === 'string') out.dueDate = body.dueDate
+  if (body.dueDate === null) {
+    out.dueDate = null
+  } else if (typeof body.dueDate === 'string') {
+    // Accept only ISO 8601 date/datetime strings (YYYY-MM-DD or YYYY-MM-DDTHH:mm…).
+    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.Z+-]+)?$/
+    if (ISO_DATE_RE.test(body.dueDate) && !isNaN(Date.parse(body.dueDate))) {
+      out.dueDate = body.dueDate
+    }
+  }
   return out
 }
 
@@ -880,9 +891,9 @@ app.put('/api/notes/:id', requireAuth, async (req, res) => {
   }
   const safeNoteBody = pickNoteFields(req.body || {})
   if (Object.keys(safeNoteBody).length === 0) return bad(res, 'No valid fields to update')
-  const updated = { ...note, ...safeNoteBody, updatedAt: new Date().toISOString() }
-  await ref.update(updated)
-  res.json({ id: req.params.id, ...updated })
+  const patch = { ...safeNoteBody, updatedAt: new Date().toISOString() }
+  await ref.update(patch)
+  res.json({ id: req.params.id, ...note, ...patch })
 })
 
 app.delete('/api/notes/:id', requireAuth, async (req, res) => {

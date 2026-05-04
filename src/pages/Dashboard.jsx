@@ -21,7 +21,7 @@ export default function Dashboard() {
   const projectName = (id) => projects.find(p => p.id === id)?.name ?? '—'
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8 max-w-6xl w-full mx-auto">
       {/* Page header */}
       <div className="mb-8">
         <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-zinc-100">Dashboard</h2>

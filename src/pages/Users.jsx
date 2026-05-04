@@ -47,7 +47,7 @@ export default function Users() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8 max-w-4xl w-full mx-auto">
       <div className="mb-8">
         <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-zinc-100">Users</h2>
         <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">

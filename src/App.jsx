@@ -19,6 +19,7 @@ import './App.css'
 
 function AppShell({ dark, onToggleDark }) {
   const { loading, error } = useApp()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   if (loading) return (
     <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-black">
@@ -45,10 +46,27 @@ function AppShell({ dark, onToggleDark }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-black">
-      <Sidebar dark={dark} onToggleDark={onToggleDark} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Mobile backdrop */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+      <Sidebar dark={dark} onToggleDark={onToggleDark} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className="h-14 flex-shrink-0 flex items-center justify-end px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
+        <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 sm:px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
+          {/* Hamburger — mobile only */}
+          <button
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors"
+            onClick={() => setMobileNavOpen(o => !o)}
+            aria-label="Open navigation"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
           <UserMenu dark={dark} onToggleDark={onToggleDark} />
         </header>
         <main className="flex-1 overflow-y-auto">
