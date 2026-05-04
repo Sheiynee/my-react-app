@@ -57,10 +57,10 @@ function AppShell({ dark, onToggleDark }) {
       <Sidebar dark={dark} onToggleDark={onToggleDark} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className="h-14 shrink-0 flex items-center justify-between px-4 sm:px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
-          {/* Hamburger — mobile only */}
+        <header className="h-14 shrink-0 flex items-center px-4 sm:px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
+          {/* Hamburger — mobile only, stays on the left */}
           <button
-            className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors"
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors mr-auto"
             onClick={() => setMobileNavOpen(o => !o)}
             aria-label="Open navigation"
           >
@@ -68,7 +68,9 @@ function AppShell({ dark, onToggleDark }) {
               <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
-          <div className="flex items-center gap-1">
+
+          {/* Right-side actions — always pushed to the right */}
+          <div className="flex items-center gap-1 ml-auto">
             <NotificationBell />
             <UserMenu dark={dark} onToggleDark={onToggleDark} />
           </div>
