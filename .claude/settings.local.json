@@ -12,7 +12,11 @@
       "Bash(npm run *)",
       "Bash(node --check index.js)",
       "Bash(node --check bot.js)",
-      "Bash(node --check db.js)"
+      "Bash(node --check db.js)",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__search_files",
+      "Bash(git add *)"
     ]
   }
 }

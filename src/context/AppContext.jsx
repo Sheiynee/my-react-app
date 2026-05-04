@@ -85,6 +85,11 @@ export function AppProvider({ children }) {
     return p
   }
 
+  async function refreshProjectTasks(projectId) {
+    const fresh = await api.getTasks(projectId)
+    setTasks(prev => [...prev.filter(t => t.projectId !== projectId), ...fresh])
+  }
+
   // Tasks
   async function addTask(data) {
     const t = await api.createTask(data)
@@ -158,7 +163,7 @@ export function AppProvider({ children }) {
       currentUser,
       projects, tasks, members, notes, loading, error,
       getProjectRole,
-      addProject, editProject, removeProject, refreshProject,
+      addProject, editProject, removeProject, refreshProject, refreshProjectTasks,
       addTask, editTask, removeTask,
       addMember, editMember, removeMember,
       addNote, editNote, removeNote,

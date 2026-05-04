@@ -129,7 +129,7 @@ function TaskCardContent({
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { projects, tasks, members, editProject, removeProject, addTask, editTask, removeTask, getProjectRole, refreshProject } = useApp()
+  const { projects, tasks, members, editProject, removeProject, addTask, editTask, removeTask, getProjectRole, refreshProject, refreshProjectTasks } = useApp()
 
   const project = projects.find(p => p.id === id)
   const columns = project?.columns?.length ? project.columns : DEFAULT_COLUMNS
@@ -140,6 +140,7 @@ export default function ProjectDetail() {
   const canDelete = canDo(myRole, 'admin')
   const canAddTask = canDo(myRole, 'member')
 
+  const [search, setSearch] = useState('')
   const [taskModal, setTaskModal] = useState(null)
   const [taskForm, setTaskForm] = useState(EMPTY_TASK)
   const [linkInput, setLinkInput] = useState({ url: '', label: '' })
@@ -154,6 +155,9 @@ export default function ProjectDetail() {
   const [membersModal, setMembersModal] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  // Keep project tasks fresh whenever we navigate to a different project.
+  useEffect(() => { refreshProjectTasks(id) }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (taskModal?.mode !== 'edit' || !taskModal.id) {
@@ -303,6 +307,16 @@ export default function ProjectDetail() {
     setProjectForm(f => ({ ...f, columns: f.columns.map((c, i) => i === idx ? { ...c, [field]: value } : c) }))
   }
 
+  function moveColumn(idx, dir) {
+    setProjectForm(f => {
+      const cols = [...f.columns]
+      const target = idx + dir
+      if (target < 0 || target >= cols.length) return f
+      ;[cols[idx], cols[target]] = [cols[target], cols[idx]]
+      return { ...f, columns: cols }
+    })
+  }
+
   async function removeColumn(idx) {
     const col = projectForm.columns[idx]
     const colTasks = projectTasks.filter(t => t.status === col.key)
@@ -341,6 +355,11 @@ export default function ProjectDetail() {
   const lastColKey = columns[columns.length - 1]?.key
   const done = projectTasks.filter(t => t.status === lastColKey || t.status === 'done').length
   const progress = projectTasks.length ? Math.round((done / projectTasks.length) * 100) : 0
+
+  const searchTerm = search.trim().toLowerCase()
+  const visibleTasks = searchTerm
+    ? projectTasks.filter(t => t.title.toLowerCase().includes(searchTerm))
+    : projectTasks
 
   // Build the prop bundle for the hoisted TaskCardContent component. Keeps the JSX
   // call sites short and ensures both the kanban cell and the drag overlay stay in sync.
@@ -395,12 +414,23 @@ export default function ProjectDetail() {
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, background: project.color }} />
       </div>
 
+      {/* Search */}
+      <div className="mb-5">
+        <input
+          type="search"
+          placeholder="Search tasks…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full sm:w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
+        />
+      </div>
+
       {/* Kanban board */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pb-2">
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))`, minWidth: `${columns.length * 276}px` }}>
           {columns.map(col => {
-            const colTasks = projectTasks.filter(t => t.status === col.key)
+            const colTasks = visibleTasks.filter(t => t.status === col.key)
             return (
               <div key={col.key} className="bg-gray-50 dark:bg-zinc-950/60 border border-gray-100 dark:border-zinc-800/60 rounded-2xl flex flex-col">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-zinc-800/60">
@@ -462,6 +492,11 @@ export default function ProjectDetail() {
                   {t.createdByName && <>Created by <span className="font-medium">{t.createdByName}</span></>}
                   {t.createdByName && t.createdAt && ' · '}
                   {t.createdAt && new Date(t.createdAt).toLocaleDateString()}
+                </p>
+              )}
+              {t.updatedByName && t.updatedAt && t.updatedAt !== t.createdAt && (
+                <p className="text-[11px] text-gray-400 dark:text-zinc-500">
+                  Last updated by <span className="font-medium">{t.updatedByName}</span> · {new Date(t.updatedAt).toLocaleDateString()}
                 </p>
               )}
 
@@ -656,7 +691,6 @@ export default function ProjectDetail() {
                     </div>
                   ))}
                 </div>
-                <input className={`${inputCls} mb-2`} placeholder="Your name" value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} />
                 <div className="flex gap-2 items-start">
                   <textarea
                     className={inputCls}
@@ -714,11 +748,15 @@ export default function ProjectDetail() {
                 <button type="button" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 transition-colors" onClick={addColumn}>+ Add Column</button>
               </div>
               <div className="space-y-2">
-                {(projectForm.columns || []).map((col, idx) => (
+                {(projectForm.columns || []).map((col, idx, arr) => (
                   <div key={col.key} className="flex items-center gap-2">
+                    <div className="flex flex-col gap-0.5 flex-shrink-0">
+                      <button type="button" disabled={idx === 0} onClick={() => moveColumn(idx, -1)} className="w-5 h-4 flex items-center justify-center rounded text-gray-300 dark:text-zinc-600 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[10px]">▲</button>
+                      <button type="button" disabled={idx === arr.length - 1} onClick={() => moveColumn(idx, 1)} className="w-5 h-4 flex items-center justify-center rounded text-gray-300 dark:text-zinc-600 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[10px]">▼</button>
+                    </div>
                     <input type="color" value={col.color} onChange={e => updateColumn(idx, 'color', e.target.value)} aria-label={`Color for column ${col.label}`} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-zinc-700 cursor-pointer p-0.5 flex-shrink-0" />
                     <input className={inputCls} value={col.label} onChange={e => updateColumn(idx, 'label', e.target.value)} placeholder="Column name" />
-                    {(projectForm.columns || []).length > 1 && (
+                    {arr.length > 1 && (
                       <button type="button" className="w-7 h-7 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs" onClick={() => removeColumn(idx)}>✕</button>
                     )}
                   </div>

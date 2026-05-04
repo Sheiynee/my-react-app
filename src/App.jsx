@@ -5,6 +5,7 @@ import { useApp } from './context/app-context'
 import { AuthProvider } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import UserMenu from './components/UserMenu'
+import NotificationBell from './components/NotificationBell'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
@@ -56,7 +57,7 @@ function AppShell({ dark, onToggleDark }) {
       <Sidebar dark={dark} onToggleDark={onToggleDark} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 sm:px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
+        <header className="h-14 shrink-0 flex items-center justify-between px-4 sm:px-5 border-b border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl">
           {/* Hamburger — mobile only */}
           <button
             className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-900 transition-colors"
@@ -67,7 +68,10 @@ function AppShell({ dark, onToggleDark }) {
               <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
-          <UserMenu dark={dark} onToggleDark={onToggleDark} />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <UserMenu dark={dark} onToggleDark={onToggleDark} />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto">
           <Routes>
