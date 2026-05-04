@@ -115,11 +115,11 @@ export default function Profile() {
               value={bio}
               onChange={e => setBio(e.target.value)}
               rows={3}
-              maxLength={200}
+              maxLength={500}
               className="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               placeholder="A short bio about yourself…"
             />
-            <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1 text-right">{bio.length}/200</p>
+            <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1 text-right">{bio.length}/500</p>
           </div>
 
           <div>

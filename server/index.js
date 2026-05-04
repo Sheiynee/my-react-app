@@ -637,6 +637,23 @@ function pickTaskFields(body) {
       out.dueDate = body.dueDate
     }
   }
+  if (Array.isArray(body.links)) {
+    out.links = body.links
+      .filter(l => l && typeof l === 'object')
+      .slice(0, 20)
+      .map(l => {
+        if (typeof l.url !== 'string') return null
+        try {
+          const u = new URL(l.url)
+          if (u.protocol !== 'https:' && u.protocol !== 'http:') return null
+          return {
+            url: u.href,
+            label: typeof l.label === 'string' ? l.label.trim().slice(0, 200) : u.href,
+          }
+        } catch { return null }
+      })
+      .filter(Boolean)
+  }
   return out
 }
 

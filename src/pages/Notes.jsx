@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
+import RichTextEditor from '../components/RichTextEditor'
 import { stripHtml } from '../constants'
 import { canDo } from '../roles'
 import { auth } from '../firebase'
@@ -131,10 +132,13 @@ export default function Notes() {
               <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Title</span>
               <input autoFocus className={inputCls} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Note title" />
             </label>
-            <label className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Content</span>
-              <textarea className={inputCls} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} placeholder="Write your note..." rows={8} required />
-            </label>
+              <RichTextEditor
+                content={form.content}
+                onChange={content => setForm(f => ({ ...f, content }))}
+              />
+            </div>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">Project</span>
               <select className={inputCls} value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>

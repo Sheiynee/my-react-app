@@ -145,7 +145,6 @@ export default function ProjectDetail() {
   const [linkInput, setLinkInput] = useState({ url: '', label: '' })
   const [comments, setComments] = useState([])
   const [commentInput, setCommentInput] = useState('')
-  const [commentAuthor, setCommentAuthor] = useState('')
   const [subtaskInput, setSubtaskInput] = useState('')
   const [activeTask, setActiveTask] = useState(null)
   const [editProjectModal, setEditProjectModal] = useState(false)
@@ -238,7 +237,6 @@ export default function ProjectDetail() {
     const comment = await api.createComment({
       taskId: taskModal.id,
       content: commentInput.trim(),
-      authorName: commentAuthor.trim() || 'Anonymous',
     })
     setComments(prev => [...prev, comment])
     setCommentInput('')
@@ -399,7 +397,7 @@ export default function ProjectDetail() {
 
       {/* Kanban board */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="overflow-x-auto -mx-8 px-8 pb-2">
+        <div className="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pb-2">
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))`, minWidth: `${columns.length * 276}px` }}>
           {columns.map(col => {
             const colTasks = projectTasks.filter(t => t.status === col.key)
