@@ -726,7 +726,13 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   } else if (safeBody.status && safeBody.status !== 'done') {
     completedAtUpdate.completedAt = null
   }
-  const patch = { ...safeBody, ...completedAtUpdate }
+  const patch = {
+    ...safeBody,
+    ...completedAtUpdate,
+    updatedAt: new Date().toISOString(),
+    updatedBy: req.user.uid,
+    updatedByName: req.user.name || req.user.email || 'Unknown',
+  }
   await ref.update(patch)
   const updated = { ...task, ...patch }
   res.json({ id: req.params.id, ...updated })

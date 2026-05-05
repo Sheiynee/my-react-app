@@ -57,20 +57,23 @@ async function resolveDiscordNumericId(username) {
 }
 
 // Resolves member IDs → array of { member, numericDiscordId }
+// Firestore reads and Discord API calls are both parallelised so N
+// assignees cost one round-trip each instead of N sequential ones.
 async function resolveMemberUsers(memberIds) {
   const memberDocs = await Promise.all(
     memberIds.map(id => db.collection('members').doc(id).get())
   )
-  const results = []
-  for (const doc of memberDocs) {
-    if (!doc.exists) continue
-    const member = { id: doc.id, ...doc.data() }
-    if (!member.discordId) continue
-    const numericDiscordId = await resolveDiscordNumericId(member.discordId)
-    if (!numericDiscordId) continue
-    results.push({ member, numericDiscordId })
-  }
-  return results
+  const withDiscord = memberDocs
+    .filter(doc => doc.exists && doc.data().discordId)
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+
+  const resolved = await Promise.all(
+    withDiscord.map(async member => {
+      const numericDiscordId = await resolveDiscordNumericId(member.discordId)
+      return numericDiscordId ? { member, numericDiscordId } : null
+    })
+  )
+  return resolved.filter(Boolean)
 }
 
 function buildEmbed(task, projectName, assignedByName) {

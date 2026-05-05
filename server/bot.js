@@ -64,24 +64,26 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'project') {
       if (sub === 'list') {
-        const [projectsSnap, tasksSnap] = await Promise.all([
-          db.collection('projects').get(),
-          db.collection('tasks').get(),
-        ])
+        const projectsSnap = await db.collection('projects').get()
         let projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         // Scope the list to projects this user can actually access.
         if (!isAppAdmin) projects = projects.filter(p => getUserProjectRole(actor.uid, p) !== null)
-        const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
         if (!projects.length) {
           return interaction.editReply({ content: '📂 No projects you can access. Create one with `/project create`.', ephemeral: true })
         }
+
+        // Fetch task counts per project in parallel — avoids a full collection scan.
+        const taskSnaps = await Promise.all(
+          projects.map(p => db.collection('tasks').where('projectId', '==', p.id).get())
+        )
         const embed = new EmbedBuilder()
           .setTitle('📂 Projects')
           .setColor(0x388bfd)
-          .setDescription(projects.map(p => {
-            const taskCount = tasks.filter(t => t.projectId === p.id && !t.parentId).length
-            const doneCount = tasks.filter(t => t.projectId === p.id && t.status === 'done' && !t.parentId).length
+          .setDescription(projects.map((p, i) => {
+            const topLevel = taskSnaps[i].docs.filter(d => !d.data().parentId)
+            const taskCount = topLevel.length
+            const doneCount = topLevel.filter(d => d.data().status === 'done').length
             return `**${p.name}**\n${p.description || '*No description*'}\n${doneCount}/${taskCount} tasks done`
           }).join('\n\n'))
         return interaction.editReply({ embeds: [embed] })
