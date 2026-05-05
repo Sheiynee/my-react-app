@@ -58,7 +58,7 @@ export default function Dashboard() {
                     tabIndex={0}
                     className="flex items-center gap-3 px-2 py-2 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition-colors"
                     onClick={() => navigate(`/projects/${t.projectId}`)}
-                    onKeyDown={e => e.key === 'Enter' && navigate(`/projects/${t.projectId}`)}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && navigate(`/projects/${t.projectId}`)}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDot[t.status] || 'bg-gray-300'}`} />
                     <span className="flex-1 text-sm text-gray-900 dark:text-zinc-100 truncate">{t.title}</span>
@@ -93,7 +93,7 @@ export default function Dashboard() {
                     tabIndex={0}
                     className="px-2 py-2.5 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition-colors"
                     onClick={() => navigate('/notes')}
-                    onKeyDown={e => e.key === 'Enter' && navigate('/notes')}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && navigate('/notes')}
                   >
                     <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">{n.title || 'Untitled'}</p>
                     <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5 truncate">{stripHtml(n.content).slice(0, 80)}</p>
@@ -118,6 +118,9 @@ function StatCard({ label, value, color, onClick }) {
     <div
       className={`bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-4 shadow-sm flex flex-col gap-1 ${onClick ? 'cursor-pointer hover:border-blue-200 dark:hover:border-blue-900 transition-colors' : ''}`}
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e => (e.key === 'Enter' || e.key === ' ') && onClick()) : undefined}
     >
       <span className="text-3xl font-semibold tracking-tight" style={{ color }}>{value}</span>
       <span className="text-xs text-gray-500 dark:text-zinc-400">{label}</span>

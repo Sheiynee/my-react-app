@@ -145,6 +145,7 @@ export default function ProjectDetail() {
   const [taskForm, setTaskForm] = useState(EMPTY_TASK)
   const [linkInput, setLinkInput] = useState({ url: '', label: '' })
   const [comments, setComments] = useState([])
+  const [commentsError, setCommentsError] = useState(false)
   const [commentInput, setCommentInput] = useState('')
   const [subtaskInput, setSubtaskInput] = useState('')
   const [activeTask, setActiveTask] = useState(null)
@@ -162,14 +163,16 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (taskModal?.mode !== 'edit' || !taskModal.id) {
       setComments([])
+      setCommentsError(false)
       return
     }
+    setCommentsError(false)
     // Abort the in-flight fetch if the user switches tasks or closes the modal,
     // so stale results from a previous task can't overwrite the current comments.
     const ctrl = new AbortController()
     api.getComments(taskModal.id, { signal: ctrl.signal })
       .then(setComments)
-      .catch((err) => { if (!err?.aborted && import.meta.env.DEV) console.error(err) })
+      .catch((err) => { if (!err?.aborted) setCommentsError(true) })
     return () => ctrl.abort()
   }, [taskModal?.id, taskModal?.mode])
 
@@ -679,6 +682,9 @@ export default function ProjectDetail() {
             {taskModal.mode === 'edit' && (
               <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
                 <p className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Comments ({comments.length})</p>
+                {commentsError && (
+                  <p className="text-xs text-red-500 mb-2">Failed to load comments. Please try again.</p>
+                )}
                 <div className="space-y-2 mb-3">
                   {comments.map(c => (
                     <div key={c.id} className="bg-gray-50 dark:bg-zinc-950 border border-gray-100 dark:border-zinc-800 rounded-xl p-3">

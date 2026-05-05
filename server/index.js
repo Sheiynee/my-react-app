@@ -76,13 +76,17 @@ const authLimiter = rateLimit({
 // code shouldn't be brute-forceable — cap at a handful of attempts per minute.
 const exchangeLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 3,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many exchange attempts' },
 })
 app.use('/api', globalLimiter)
 app.use('/auth', authLimiter)
+
+const DISCORD_OAUTH_URL = 'https://discord.com/api/oauth2/authorize'
+const DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
+const DISCORD_USER_URL = 'https://discord.com/api/users/@me'
 
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
 
@@ -243,7 +247,7 @@ app.get('/auth/discord', (req, res) => {
     scope: 'identify email',
     state,
   })
-  res.redirect(`https://discord.com/api/oauth2/authorize?${params}`)
+  res.redirect(`${DISCORD_OAUTH_URL}?${params}`)
 })
 
 app.get('/auth/discord/callback', async (req, res) => {
@@ -259,7 +263,7 @@ app.get('/auth/discord/callback', async (req, res) => {
 
   try {
     // Exchange code for Discord access token
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+    const tokenRes = await fetch(DISCORD_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -274,7 +278,7 @@ app.get('/auth/discord/callback', async (req, res) => {
     if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error)
 
     // Fetch Discord user profile
-    const userRes = await fetch('https://discord.com/api/users/@me', {
+    const userRes = await fetch(DISCORD_USER_URL, {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     })
     const discordUser = await userRes.json()

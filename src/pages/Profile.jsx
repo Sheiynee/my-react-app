@@ -4,6 +4,9 @@ import { updateProfile } from 'firebase/auth'
 import { auth } from '../firebase'
 import * as api from '../api'
 
+let TIMEZONES
+try { TIMEZONES = Intl.supportedValuesOf('timeZone') } catch { TIMEZONES = ['UTC'] }
+
 export default function Profile() {
   const { user } = useAuth()
 
@@ -15,6 +18,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [photoLoadError, setPhotoLoadError] = useState(false)
 
   useEffect(() => {
     api.getMe().then(data => {
@@ -57,9 +61,14 @@ export default function Profile() {
         {/* Avatar preview */}
         <div className="flex items-center gap-6">
           <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-200 dark:ring-zinc-700 flex-shrink-0">
-            {previewURL ? (
-              <img src={previewURL} alt={displayName} className="w-full h-full object-cover"
-                onError={e => { e.target.style.display = 'none' }} />
+            {previewURL && !photoLoadError ? (
+              <img
+                src={previewURL}
+                alt={displayName}
+                className="w-full h-full object-cover"
+                onLoad={() => setPhotoLoadError(false)}
+                onError={() => setPhotoLoadError(true)}
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-2xl font-semibold">
                 {initials}
@@ -74,7 +83,7 @@ export default function Profile() {
             <input
               type="url"
               value={photoInput}
-              onChange={e => setPhotoInput(e.target.value)}
+              onChange={e => { setPhotoInput(e.target.value); setPhotoLoadError(false) }}
               placeholder="https://example.com/your-photo.jpg"
               className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -86,6 +95,9 @@ export default function Profile() {
               >
                 Reset to Discord avatar
               </button>
+            )}
+            {photoLoadError && photoInput.trim() && (
+              <p className="text-xs text-amber-500">Image could not be loaded — check the URL.</p>
             )}
             <p className="text-xs text-gray-400 dark:text-zinc-500">Paste any direct image URL</p>
           </div>
@@ -131,7 +143,7 @@ export default function Profile() {
               onChange={e => setTimezone(e.target.value)}
               className="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {Intl.supportedValuesOf('timeZone').map(tz => (
+              {TIMEZONES.map(tz => (
                 <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>
