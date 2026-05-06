@@ -96,7 +96,7 @@ export default function Notes() {
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 leading-snug">{n.title || 'Untitled'}</h3>
                   {(canDo(getProjectRole(n.projectId), 'manager') || n.createdBy === currentUid || !n.projectId) && (
-                    {confirmDeleteId === n.id ? (
+                    confirmDeleteId === n.id ? (
                       <span className="flex items-center gap-1 opacity-100">
                         <button
                           className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
@@ -119,7 +119,7 @@ export default function Notes() {
                       >
                         <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                       </button>
-                    )}
+                    )
                   )}
                 </div>
                 <p className="text-xs text-gray-400 dark:text-zinc-500 leading-relaxed mb-4 line-clamp-3">
