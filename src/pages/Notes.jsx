@@ -2,11 +2,9 @@ import { useState } from 'react'
 import { useApp } from '../context/app-context'
 import Modal from '../components/Modal'
 import RichTextEditor from '../components/RichTextEditor'
-import { stripHtml } from '../constants'
+import { stripHtml, inputCls } from '../constants'
 import { canDo } from '../roles'
 import { auth } from '../firebase'
-
-const inputCls = "w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-zinc-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
 
 const EMPTY = { title: '', content: '', projectId: '' }
 
@@ -17,6 +15,7 @@ export default function Notes() {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const filtered = [...notes]
     .filter(n => !filter || n.projectId === filter)
@@ -97,13 +96,30 @@ export default function Notes() {
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 leading-snug">{n.title || 'Untitled'}</h3>
                   {(canDo(getProjectRole(n.projectId), 'manager') || n.createdBy === currentUid || !n.projectId) && (
-                    <button
-                      className="w-6 h-6 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-300 dark:text-zinc-700 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                      onClick={e => { e.stopPropagation(); if (confirm('Delete this note?')) removeNote(n.id) }}
-                      title="Delete"
-                    >
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                    </button>
+                    {confirmDeleteId === n.id ? (
+                      <span className="flex items-center gap-1 opacity-100">
+                        <button
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
+                          onClick={e => { e.stopPropagation(); removeNote(n.id); setConfirmDeleteId(null) }}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
+                          onClick={e => { e.stopPropagation(); setConfirmDeleteId(null) }}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="w-6 h-6 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-300 dark:text-zinc-700 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                        onClick={e => { e.stopPropagation(); setConfirmDeleteId(n.id) }}
+                        title="Delete"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1 1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                      </button>
+                    )}
                   )}
                 </div>
                 <p className="text-xs text-gray-400 dark:text-zinc-500 leading-relaxed mb-4 line-clamp-3">

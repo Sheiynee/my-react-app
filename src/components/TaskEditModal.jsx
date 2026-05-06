@@ -4,9 +4,7 @@ import RichTextEditor from './RichTextEditor'
 import * as api from '../api'
 import { useApp } from '../context/app-context'
 import { canDo } from '../roles'
-import { inputCls } from '../constants'
-
-const PRIORITIES = ['low', 'medium', 'high', 'urgent']
+import { inputCls, PRIORITIES } from '../constants'
 
 export default function TaskEditModal({
   mode,
@@ -45,6 +43,7 @@ export default function TaskEditModal({
   const [comments, setComments] = useState([])
   const [commentsError, setCommentsError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [commentPosting, setCommentPosting] = useState(false)
 
   const subtasks = tasks.filter(t => t.parentId === task?.id)
 
@@ -74,10 +73,15 @@ export default function TaskEditModal({
 
   async function handleAddComment(e) {
     e?.preventDefault()
-    if (!commentInput.trim()) return
-    const comment = await api.createComment({ taskId: task.id, content: commentInput.trim() })
-    setComments(prev => [...prev, comment])
-    setCommentInput('')
+    if (!commentInput.trim() || commentPosting) return
+    setCommentPosting(true)
+    try {
+      const comment = await api.createComment({ taskId: task.id, content: commentInput.trim() })
+      setComments(prev => [...prev, comment])
+      setCommentInput('')
+    } finally {
+      setCommentPosting(false)
+    }
   }
 
   async function handleDeleteComment(commentId) {
@@ -95,7 +99,12 @@ export default function TaskEditModal({
   function addLink() {
     const url = linkInput.url.trim()
     if (!url) return
-    try { new URL(url) } catch { alert('Please enter a valid URL (e.g. https://example.com)'); return }
+    let parsed
+    try { parsed = new URL(url) } catch { alert('Please enter a valid URL (e.g. https://example.com)'); return }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      alert('Only http:// and https:// links are allowed.')
+      return
+    }
     setTaskForm(f => ({ ...f, links: [...(f.links || []), { url, label: linkInput.label.trim() || url }] }))
     setLinkInput({ url: '', label: '' })
   }
@@ -248,7 +257,7 @@ export default function TaskEditModal({
                 rows={2}
                 onKeyDown={e => e.key === 'Enter' && e.ctrlKey && handleAddComment(e)}
               />
-              <button type="button" className="flex-shrink-0 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors" onClick={handleAddComment}>Post</button>
+              <button type="button" disabled={commentPosting} className="flex-shrink-0 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={handleAddComment}>{commentPosting ? 'Posting…' : 'Post'}</button>
             </div>
           </div>
         )}
